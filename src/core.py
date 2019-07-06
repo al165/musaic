@@ -2,16 +2,57 @@
 #pylint: disable=invalid-name,missing-docstring
 
 from copy import deepcopy
+from collections import defaultdict
+from random import randint
 
 DEFAULT_SECTION_PARAMS = {
     'lead': None,
     'length': 4,
     'loop_num': 1,
     'loop_alt_len': 0,
-    'loop_alt_num': 0,
+    'loop_alt_num': 2,
     'octave': 4,
     'mute': False
 }
+
+def forceListLength(l, length, alt=None):
+    if len(l) > length:
+        return l[:length]
+    return l + [alt for _ in range(length - len(l))]
+
+class Measure:
+    '''
+    Measure: Holds note values and associated times
+    '''
+
+    def __init__(self, notes=None, events=None):
+
+        # Note = (nn, start_tick, end_tick)
+        if notes:
+            self.notes = notes
+        else:
+            self.notes = []
+
+        # {tick: MIDI Event} where MIDI Event = ('/eventType', (chan, nn, vel))
+        if events:
+            self.MIDIEvents = events
+        else:
+            self.MIDIEvents = defaultdict(list)
+
+        # TEST: fill with random notes
+        for i in range(4):
+            nn = randint(45, 88)
+            note = (nn, i*24, (i+1)*24)
+            self.notes.append(note)
+
+        self.convertNotesToMIDIEvents()
+
+    def convertNotesToMIDIEvents(self):
+        events = defaultdict(list)
+        for n in self.notes:
+            events[n[1]].append(('/noteOn', (1, n[0], 100)))
+            events[n[2]].append(('/noteOff', (1, n[0], 100)))
+        self.MIDIEvents = events
 
 
 class Track:
@@ -28,6 +69,7 @@ class Track:
         self._flattenMeasures()
 
     def _flattenMeasures(self):
+        print('Track flatten measures')
         self.flatMeasures = []
         for s in self.track:
             self.flatMeasures.extend(s.flatMeasures)
@@ -36,7 +78,6 @@ class Track:
         return self.flatMeasures[n]
 
     def moveSectionBack(self, idx):
-        print(idx, len(self.track))
         if idx > 0:
             self.track = self.track[:idx-1] + [self.track[idx]] \
                 + [self.track[idx-1]] + self.track[idx+1:]
@@ -58,9 +99,9 @@ class Section:
     Section: collection of parameters, attributes and properties of a musical section.
     '''
 
-    def __init__(self, name, _id, params=None):
+    def __init__(self, name, id_, params=None):
         self.name = name
-        self._id = _id
+        self.id_ = id_
 
         if params:
             self.params = params
@@ -73,19 +114,17 @@ class Section:
         self.generateMeasures()
 
     def changeParameter(self, **kwargs):
-        regen = False
+        print('Section: changeParameter()', kwargs)
         for key, val in kwargs.items():
             self.params[key] = val
-
-            if key in {'length', 'loop_num', 'loop_alt_len', 'loop_alt_num'}:
-                regen = True
 
         # make sure looping lengths are all correct
         if self.params['loop_alt_len'] >= self.params['length']:
             self.params['loop_alt_len'] = self.params['length'] - 1
 
-        if regen:
-            self.generateMeasures()
+        # TODO: after changing parameters add None measures to self.mainMeasures etc...
+
+        self.flattenMeasures()
 
     def measureAt(self, n):
         assert n < len(self.flatMeasures), f'Index {n} for Section {self.name} too large'
@@ -96,22 +135,41 @@ class Section:
         return None
 
     def generateMeasures(self):
-        self.mainMeasures = self.name[0] * (self.params['length'] - self.params['loop_alt_len'])
-        self.altEnds = [None] * self.params['loop_alt_num']
-        for i in range(self.params['loop_alt_num']):
-            self.altEnds[i] = str(i)*self.params['loop_alt_len']
+        lenMainMeasures = self.params['length'] - self.params['loop_alt_len']
+        self.mainMeasures = [Measure() for _ in range(lenMainMeasures)]
+
+        numAlts = self.params['loop_alt_num']
+        lenAlts = self.params['loop_alt_len']
+        self.altEnds = [[Measure() for _ in range(lenAlts)] for _ in range(numAlts)]
 
         self.flattenMeasures()
 
     def flattenMeasures(self):
-        track = []
+        print('flatten measures')
+        length = self.params['length']
+        numAlts = self.params['loop_alt_num']
+        lenAlts = self.params['loop_alt_len']
+
+        lenMainMeasures = length - lenAlts
+
+        main = forceListLength(self.mainMeasures, lenMainMeasures)
+
+        track = [None] * (length*self.params['loop_num'])
+
         for i in range(self.params['loop_num']):
-            track.extend(self.mainMeasures)
-            if self.params['loop_alt_num'] > 0:
-                track.extend(self.altEnds[i%self.params['loop_alt_num']])
+            track[i*length:i*length+lenMainMeasures] = main
+
+            if i%numAlts < len(self.altEnds):
+                altEnd = forceListLength(self.altEnds[i%numAlts], lenAlts)
+            else:
+                altEnd = [None for _ in range(lenAlts)]
+
+            track[i*length+lenMainMeasures:i*length+length] = altEnd
 
         self.flatMeasures = track
 
+    def mainLength(self):
+        return self.params['length']
 
     def __len__(self):
         return self.params['length'] * self.params['loop_num']
@@ -121,6 +179,48 @@ class Section:
 
     def __str__(self):
         return '|' + ''.join(self.flatMeasures)
+
+
+class BlankSection():
+    '''
+    Blank Section: no bars or parameters (except length).
+    '''
+
+    def __init__(self, id_, length=None):
+        self.name = ''
+        self.id_ = id_
+
+        self.params = deepcopy(DEFAULT_SECTION_PARAMS)
+
+        if length:
+            self.params['length'] = length
+
+        self.generateMeasures()
+
+    def changeParameter(self, **kwargs):
+        if 'length' in kwargs.keys():
+            self.params['length'] = kwargs['length']
+
+    def measureAt(self, n):
+        return None
+
+    def generateMeasures(self):
+        self.flatMeasures = [None] * self.params['length']
+
+    def flattenMeasures(self):
+        self.flatMeasures = [None] * self.params['length']
+
+    def mainLength(self):
+        return self.params['length']
+
+    def __len__(self):
+        return self.params['length']
+
+    def __repr__(self):
+        return f'|{self.name}, {self.params["length"]}'
+
+    def __str__(self):
+        return '|' + ' '*self.params['length']
 
 
 class Instrument:
@@ -143,7 +243,16 @@ class Instrument:
 
     def newSection(self, params=None):
         idx = len(self.sections)
-        section = Section(chr(65+idx), idx, params)
+        section = Section(chr(65+idx)+str(self.id_), idx, params)
+        self.sections.append(section)
+        self.track.appendSection(section)
+
+    def newBlankSection(self, params=None):
+        idx = len(self.sections)
+        length = None
+        if params:
+            length = params['length']
+        section = BlankSection(idx, length=length)
         self.sections.append(section)
         self.track.appendSection(section)
 
