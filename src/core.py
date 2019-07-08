@@ -35,9 +35,9 @@ class Measure:
 
         # {tick: MIDI Event} where MIDI Event = ('/eventType', (chan, nn, vel))
         if events:
-            self.MIDIEvents = events
+            self.MidiEvents = events
         else:
-            self.MIDIEvents = defaultdict(list)
+            self.MidiEvents = defaultdict(list)
 
         # TEST: fill with random notes
         for i in range(4):
@@ -45,15 +45,14 @@ class Measure:
             note = (nn, i*24, (i+1)*24)
             self.notes.append(note)
 
-        self.convertNotesToMIDIEvents()
+        self.convertNotesToMidiEvents()
 
-    def convertNotesToMIDIEvents(self):
+    def convertNotesToMidiEvents(self):
         events = defaultdict(list)
         for n in self.notes:
             events[n[1]].append(('/noteOn', (1, n[0], 100)))
             events[n[2]].append(('/noteOff', (1, n[0], 100)))
-        self.MIDIEvents = events
-        print(events)
+        self.MidiEvents = dict(events)
 
 class Track:
     '''

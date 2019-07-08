@@ -13,6 +13,8 @@ from mido import Message, MidiFile, MidiTrack, MetaMessage
 from core import Instrument
 from gui import TimeLine, InstrumentPanel
 
+APP_NAME = "musAIc (v1.0_dev)"
+
 CLIENT_ADDR = '127.0.0.1'
 CLIENT_PORT = 57120
 
@@ -207,31 +209,31 @@ class Engine(threading.Thread):
             events.sort(key=lambda x: x[0])
 
             track.append(MetaMessage('track_name', name=instrument.name))
-            track.append(Message('songpos', pos=0, time=events[0][0]))
             for i, e in enumerate(events):
                 msgType = {'/noteOn': 'note_on',
                            '/noteOff': 'note_off'}[e[1][0]]
                 args = e[1][1]
-                try:
-                    t = events[i+1][0] - e[0]
-                except IndexError:
-                    t = 0
+                if i > 0:
+                    t = e[0] - events[i-1][0]
+                else:
+                    t = e[0]
 
                 print(msgType, args, t)
-                msg = Message(msgType, note=args[1], velocity=args[2], time=t)
+                msg = Message(msgType, channel=instrument.chan,
+                              note=args[1], velocity=args[2], time=t)
                 track.append(msg)
 
+            track.append(MetaMessage('end_of_track'))
             mid.tracks.append(track)
 
         mid.save(name)
         print('[Engine]', 'done')
 
-
-
 class MusaicApp:
 
     def __init__(self):
         self.root = tk.Tk()
+        self.root.title(APP_NAME)
         self.mainframe = tk.Frame(self.root)
         self.mainframe.pack()
 

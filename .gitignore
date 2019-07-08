@@ -1,6 +1,6 @@
 # Project specific
 src/test.py
-src/test.mid
+*.mid
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
