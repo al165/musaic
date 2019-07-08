@@ -7,30 +7,90 @@ from colorsys import hsv_to_rgb
 
 from core import DEFAULT_SECTION_PARAMS
 
+BAR_WIDTH = 80
 
-def changeVarWithoutCallback(var, val):
-    ''' Changes a tk Variable without evoking any callbacks'''
-    
+class PropertyBox(tk.Frame):
+
+    def __init__(self, root, val=None, from_=0, to_=32, callback=None, **kwargs):
+        super().__init__(root, **kwargs)
+
+        self.val = val
+        self.from_ = from_
+        self.to_ = to_
+
+        self.callback = callback
+
+        self.text = tk.Label(self, text=val, width=max(2, len(str(to_))), anchor='e')
+        self.text.grid(row=0, column=0)
+
+        buttons = tk.Canvas(self, width=10, height=16)
+        buttons.create_rectangle(0, 0, 10, 8, activefill='#555555')
+        buttons.create_rectangle(0, 11, 10, 16, activefill='#555555')
+        buttons.bind('<Button-1>', self.onClick)
+
+        buttons.create_polygon(1, 6, 5, 1, 9, 6, fill='white')
+        buttons.create_polygon(1, 10, 5, 15, 9, 10, fill='white')
+
+        buttons.grid(row=0, column=1)
+
+        if val:
+            self.set(val, call=False)
+        else:
+            self.val = self.from_
+
+    def onClick(self, event):
+        if 0 < event.y < 8:
+            self.increment()
+        elif 8 < event.y < 16:
+            self.decrement()
+
+    def set(self, val, call=True):
+        if val < self.from_:
+            self.val = self.from_
+        elif val > self.to_:
+            self.val = self.to_
+        else:
+            self.val = val
+
+        self.text.config(text=self.val)
+
+        if self.callback and call:
+            self.callback()
+
+    def get(self):
+        return self.val
+
+    def increment(self, call=True):
+        self.set(self.val+1, call=call)
+
+    def decrement(self, call=True):
+        self.set(self.val-1, call=call)
+
 
 class TimeLine(tk.Frame):
 
-    def __init__(self, root, instrumentPanels, **kwargs):
+    def __init__(self, root, instrumentPanels, engine, **kwargs):
         super().__init__(root, **kwargs)
 
 #        self.instruments = instruments
         self.instrumentPanels = instrumentPanels
+        self.engine = engine
 
         self.timelineFrame = tk.Frame(root)
         self.timelineFrame.grid(row=1, column=1, sticky='ew')
         self.timelineCanvas = tk.Canvas(self.timelineFrame, width=800, height=16, bg='grey')
         self.timelineCanvas.grid(row=0, column=0, sticky='ew')
 
+        self.timelineCursor = self.timelineCanvas.create_line(0, 0, 0, 16, width=3, fill='orange')
+
         self.hsb = tk.Scrollbar(self.timelineFrame, orient='horizontal', command=self.scrollTracks)
         self.hsb.grid(row=1, column=0, sticky='ew')
 
         self.timelineCanvas.config(xscrollcommand=self.hsb.set)
+        self.timelineCanvas.bind('<Button-1>', self.onClick)
 
     def updateCanvas(self):
+        cursorCoords = self.timelineCanvas.coords(self.timelineCursor)
         self.timelineCanvas.delete('all')
 
         # find largest bounding box
@@ -41,24 +101,39 @@ class TimeLine(tk.Frame):
             self.timelineCanvas.create_text(x, 7, text='{:>3}'.format(i), anchor='w')
             self.timelineCanvas.create_line(x, 0, x, 20)
 
+        self.timelineCursor = self.timelineCanvas.create_line(cursorCoords, width=3, fill='orange')
+
         scrollRegion = self.timelineCanvas.bbox('all')
         self.timelineCanvas.config(scrollregion=scrollRegion)
 
         for p in self.instrumentPanels:
             p.trackCanvas.config(scrollregion=scrollRegion)
 
+    def updateCursor(self, barNum, tick):
+        x = (barNum + tick/96) * 80
+        if self.timelineCursor:
+            self.timelineCanvas.coords(self.timelineCursor, (x, 0, x, 16))
+        else:
+            self.timelineCursor = self.timelineCanvas.create_line(x, 0, x, 16, width=3, fill='orange')
+
     def scrollTracks(self, *args):
         self.timelineCanvas.xview(*args)
         for p in self.instrumentPanels:
             p.trackCanvas.xview(*args)
 
+    def onClick(self, event):
+        x = self.timelineCanvas.canvasx(event.x)
+        barNum = int(x/BAR_WIDTH)
+        print(barNum)
+        self.engine.setBarNumber(barNum)
 
 class InstrumentPanel():
 
-    def __init__(self, root, instrument, timeline, **kwargs):
+    def __init__(self, root, instrument, engine, timeline, **kwargs):
         self.id_ = instrument.id_
 
         self.instrument = instrument
+        self.engine = engine
         self.timeline = timeline
 
         self.selectedSection = None
@@ -90,52 +165,35 @@ class InstrumentPanel():
 
         self.paramVars = {
             'name': tk.Label(sectionParams, text=''),
-            'length': tk.IntVar(sectionParams),
-            'loop_num': tk.IntVar(sectionParams),
-            'loop_alt_num': tk.IntVar(sectionParams),
-            'loop_alt_len': tk.IntVar(sectionParams)
+            'length': PropertyBox(sectionParams, from_=1, to_=32, callback=self.setParameter),
+            'loop_num': PropertyBox(sectionParams, from_=1, to_=64, callback=self.setParameter),
+            'loop_alt_num': PropertyBox(sectionParams, from_=2, to_=8, callback=self.setParameter),
+            'loop_alt_len': PropertyBox(sectionParams, from_=0, to_=32, callback=self.setParameter),
         }
 
-        self.paramVars['name'].grid(row=0, column=0)
+        self.paramVars['name'].grid(row=0, column=0, columnspan=4, sticky='ew')
+        self.paramVars['length'].grid(row=1, column=0, sticky='ew')
+        self.paramVars['loop_num'].grid(row=1, column=1, sticky='ew')
+        self.paramVars['loop_alt_num'].grid(row=1, column=2, sticky='ew')
+        self.paramVars['loop_alt_len'].grid(row=1, column=3, sticky='ew')
 
-        for param, var in self.paramVars.items():
-            if param == 'name':
-                continue
-            var.trace('w', self.setParameter)
-
-        sectionLength = tk.Spinbox(sectionParams, from_=1, to=128,
-                                   textvariable=self.paramVars['length'], width=3)
-        sectionLength.grid(row=0, column=1)
-
-        sectionLoopNum = tk.Spinbox(sectionParams, from_=1, to=128,
-                                    textvariable=self.paramVars['loop_num'], width=3)
-        sectionLoopNum.grid(row=0, column=2)
-
-        sectionLoopAltLen = tk.Spinbox(sectionParams, from_=0, to=128,
-                                       textvariable=self.paramVars['loop_alt_len'], width=3)
-        sectionLoopAltLen.grid(row=0, column=3)
-
-        sectionLoopAltNum = tk.Spinbox(sectionParams, from_=2, to=8,
-                                       textvariable=self.paramVars['loop_alt_num'], width=3)
-        sectionLoopAltNum.grid(row=0, column=4)
-
-        regenerateButton = tk.Button(sectionParams, text='regenerate',
+        regenerateButton = tk.Button(sectionParams, text='reg',
                                      command=self.regenerateMeasures)
-        regenerateButton.grid(row=1, column=0, columnspan=5)
+        regenerateButton.grid(row=0, column=5, rowspan=2)
 
         trackFrame = tk.Frame(root)
         trackFrame.grid(row=self.id_+2, column=1, sticky='ew')
         self.trackCanvas = tk.Canvas(trackFrame, width=800, height=80)
         self.trackCanvas.grid(row=0, column=0, sticky='nesw')
 
-        self.trackCursor = self.trackCanvas.create_line(20, 0, 20, 80, width=3, fill='orange')
+        self.trackCursor = self.trackCanvas.create_line(0, 0, 0, 80, width=3, fill='orange')
 
         self.sectionFrames = dict()
-        self.sectionBlocksColors = {}
+        self.sectionBlocksColors = dict()
 
     def newSection(self):
-        self.instrument.newSection()
-        sectionID = self.instrument.sections[-1].id_
+        section = self.instrument.newSection()
+        sectionID = section.id_
         hue = (sectionID * 0.16) % 1.0
         r, g, b = hsv_to_rgb(hue, 0.8, 0.5)
         hexColor = f'#{hex(int(r*255))[2:]}{hex(int(g*255))[2:]}{hex(int(b*255))[2:]}'
@@ -144,8 +202,8 @@ class InstrumentPanel():
         self.updateCanvas()
 
     def newBlankSection(self):
-        self.instrument.newBlankSection()
-        sectionID = self.instrument.sections[-1].id_
+        section = self.instrument.newBlankSection()
+        sectionID = section.id_
         hexColor = '#222222'
         self.sectionBlocksColors[sectionID] = hexColor
         self.selectSection(sectionID, len(self.instrument.track.track)-1)
@@ -158,7 +216,6 @@ class InstrumentPanel():
         self.updateCanvas()
 
     def selectSection(self, id_, idx):
-        #print('Selected', id_, idx)
         if self.selectedIndex == idx:
             return
 
@@ -169,19 +226,25 @@ class InstrumentPanel():
 
         self.selectedSection = self.instrument.sections[id_]
         self.selectedIndex = idx
-        self.paramVars['name'].config(text=self.selectedSection.name)
+
+        try:
+            self.trackCanvas.itemconfig(self.sectionFrames[self.selectedIndex], outline='white')
+        except KeyError:
+            pass
+
+        self.paramVars['name'].config(text=self.selectedSection.name,
+                                      bg=self.sectionBlocksColors[id_])
         for param, var in self.paramVars.items():
             if param == 'name':
                 continue
-            var.set(self.selectedSection.params[param])
-
-        #self.trackCanvas.itemconfig(self.sectionFrames[idx], outline='white')
+            var.set(self.selectedSection.params[param], call=False)
 
     def updateCanvas(self):
         ''' TODO: Make more efficient! '''
 
         print('canvas updated')
         x = 0
+        cursorCoords = self.trackCanvas.coords(self.trackCursor)
         self.trackCanvas.delete('all')
         self.sectionFrames = dict()
         height = 80
@@ -244,8 +307,16 @@ class InstrumentPanel():
 
             x += w
 
-        self.trackCanvas.tag_raise(self.trackCursor)
+        #self.trackCanvas.tag_raise(self.trackCursor)
+        self.trackCursor = self.trackCanvas.create_line(cursorCoords, width=3, fill='orange')
         self.timeline.updateCanvas()
+
+    def updateCursor(self, barNum, tick):
+        x = (barNum + tick/96) * 80
+        if self.trackCursor:
+            self.trackCanvas.coords(self.trackCursor, (x, 0, x, 80))
+        else:
+            self.trackCursor = self.trackCanvas.create_line(x, 0, x, 80, width=3, fill='orange')
 
     def onClick(self, event):
         x = self.trackCanvas.canvasx(event.x)
@@ -269,17 +340,15 @@ class InstrumentPanel():
             except ValueError:
                 val = DEFAULT_SECTION_PARAMS[param]
 
-            if val < 0:
-                val = 1
-
             newParams[param] = val
 
-        self.selectedSection.changeParameter(**newParams)
+        self.instrument.changeSectionParameters(self.selectedSection.id_, **newParams)
         self.updateCanvas()
 
     def regenerateMeasures(self, *args):
         if self.selectedSection:
             self.selectedSection.generateMeasures()
+        self.instrument.track.flattenMeasures()
         self.updateCanvas()
 
     def moveSectionLeft(self):
@@ -287,3 +356,5 @@ class InstrumentPanel():
         if self.selectedIndex > 0:
             self.selectedIndex -= 1
         self.updateCanvas()
+
+#EOF

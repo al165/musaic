@@ -41,7 +41,7 @@ class Measure:
 
         # TEST: fill with random notes
         for i in range(4):
-            nn = randint(45, 88)
+            nn = randint(45, 70)
             note = (nn, i*24, (i+1)*24)
             self.notes.append(note)
 
@@ -53,7 +53,7 @@ class Measure:
             events[n[1]].append(('/noteOn', (1, n[0], 100)))
             events[n[2]].append(('/noteOff', (1, n[0], 100)))
         self.MIDIEvents = events
-
+        print(events)
 
 class Track:
     '''
@@ -66,10 +66,10 @@ class Track:
 
     def appendSection(self, section):
         self.track.append(section)
-        self._flattenMeasures()
+        self.flattenMeasures()
 
-    def _flattenMeasures(self):
-        print('Track flatten measures')
+    def flattenMeasures(self):
+        print('[Track]', 'flatten measures')
         self.flatMeasures = []
         for s in self.track:
             self.flatMeasures.extend(s.flatMeasures)
@@ -82,7 +82,7 @@ class Track:
             self.track = self.track[:idx-1] + [self.track[idx]] \
                 + [self.track[idx-1]] + self.track[idx+1:]
 
-            self._flattenMeasures()
+            self.flattenMeasures()
 
     def __len__(self):
         if self.track.__len__() == 0:
@@ -145,7 +145,7 @@ class Section:
         self.flattenMeasures()
 
     def flattenMeasures(self):
-        print('flatten measures')
+        print('[Section] flatten measures')
         length = self.params['length']
         numAlts = self.params['loop_alt_num']
         lenAlts = self.params['loop_alt_len']
@@ -197,9 +197,12 @@ class BlankSection():
 
         self.generateMeasures()
 
+        self.flatMeasures = [None] * self.params['length']
+
     def changeParameter(self, **kwargs):
         if 'length' in kwargs.keys():
             self.params['length'] = kwargs['length']
+            self.flattenMeasures()
 
     def measureAt(self, n):
         return None
@@ -231,7 +234,8 @@ class Instrument:
         self.chan = chan
 
         # Should be a dictionary with section id
-        self.sections = []
+        self.sections = dict()
+        self.sectionCount = 0
 
         self.track = Track()
 
@@ -242,22 +246,30 @@ class Instrument:
         return self.track.measureAt(n)
 
     def newSection(self, params=None):
-        idx = len(self.sections)
+        idx = self.sectionCount
         section = Section(chr(65+idx)+str(self.id_), idx, params)
-        self.sections.append(section)
+        self.sections[idx] = section
+        self.sectionCount += 1
         self.track.appendSection(section)
+        return section
 
     def newBlankSection(self, params=None):
-        idx = len(self.sections)
+        idx = self.sectionCount
         length = None
         if params:
             length = params['length']
         section = BlankSection(idx, length=length)
-        self.sections.append(section)
+        self.sections[idx] = section
+        self.sectionCount += 1
         self.track.appendSection(section)
+        return section
 
-    def duplicateSection(self, idx):
-        self.track.appendSection(self.sections[idx])
+    def duplicateSection(self, id_):
+        self.track.appendSection(self.sections[id_])
+
+    def changeSectionParameters(self, id_, **newParams):
+        self.sections[id_].changeParameter(**newParams)
+        self.track.flattenMeasures()
 
     def __len__(self):
         return len(self.track)
