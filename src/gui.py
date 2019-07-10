@@ -202,7 +202,7 @@ class InstrumentPanel():
         self.updateCanvas()
 
     def newBlankSection(self):
-        section = self.instrument.newBlankSection()
+        section = self.instrument.newSection(blank=True)
         sectionID = section.id_
         hexColor = '#222222'
         self.sectionBlocksColors[sectionID] = hexColor
@@ -279,16 +279,22 @@ class InstrumentPanel():
             # Draw notes...
             tickWidth = barWidth/96
             for i, m in enumerate(s.flatMeasures):
-                if not m:
+                if m:
+                    for note in m.notes:
+                        if note[0] <= 0:
+                            continue
+                        xOn = x + i*barWidth + tickWidth*note[1]
+                        xOff = x + i*barWidth + tickWidth*note[2]
+                        self.trackCanvas.create_line(xOn, height-note[0],
+                                                     xOff-1, height-note[0], fill='#555555')
+
+                    self.trackCanvas.create_text(x + (i+1)*barWidth - 7, 25, text=m.id_)
+
+                if (not m or m.isEmpty()) and not s.blank:
                     # draw some indicator of Null bar...
                     self.trackCanvas.create_text(x+i*barWidth+7, 25, text='x', fill='red')
                     continue
 
-                for note in m.notes:
-                    xOn = x + i*barWidth + tickWidth*note[1]
-                    xOff = x + i*barWidth + tickWidth*note[2]
-                    y = note[0]
-                    self.trackCanvas.create_line(xOn, y, xOff-1, y, fill='#555555')
 
             # Fade repeated parts...
             self.trackCanvas.create_rectangle(x+mainWidth, 0, x+w-1, height, width=0,

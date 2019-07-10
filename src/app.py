@@ -11,6 +11,7 @@ from pythonosc import udp_client
 from mido import Message, MidiFile, MidiTrack, MetaMessage
 
 from core import Instrument
+from network import NetworkEngine
 from gui import TimeLine, InstrumentPanel
 
 APP_NAME = "musAIc (v1.0_dev)"
@@ -31,11 +32,9 @@ class Player(multiprocessing.Process):
         self.msgQueue = msgQueue
         self.clockVar = clockVar
 
-        #self.barNum = 0
-        #self.tick = 0
-
-        self.clockVar['barNum'] = 0
-        self.clockVar['tick'] = 0
+        #self.clockVar['barNum'] = 0
+        #self.clockVar['tick'] = 0
+        #self.clockVar = [0, 0]
 
         # self.messages  = {barNum: {tick: [('/addr', (args))]}}
         self.messages = dict()
@@ -48,7 +47,7 @@ class Player(multiprocessing.Process):
         while not self.stopRequest.is_set():
             if self.playing.is_set():
                 # --- Before measure starts
-                print('[PLAYER]', 'Bar', self.clockVar['barNum'])
+                print('[PLAYER]', 'Bar', self.clockVar[0])
                 try:
                     self.messages = self.msgQueue.get(block=False)
                 except multiprocessing.queues.Empty:
@@ -57,13 +56,13 @@ class Player(multiprocessing.Process):
                 # BPM=80
                 tickTime = (60/80)/24
 
-                measure = self.messages.get(self.clockVar['barNum'], dict())
+                measure = self.messages.get(self.clockVar[0], dict())
                 clockOn = time.time()
 
                 # --- During measure
                 for tick in range(24 * 4):
                     self.client.send_message('/clock', tick)
-                    self.clockVar['tick'] = tick
+                    self.clockVar[1] = tick
                     #print(measure[tick])
                     for event in measure.get(tick, []):
                         addr, args = event
@@ -77,12 +76,13 @@ class Player(multiprocessing.Process):
                     time.sleep(max(0, nextTime - time.time()))
 
                 # --- After measure
-                self.clockVar['barNum'] += 1
-                self.clockVar['tick'] = 0
+                with self.clockVar.get_lock():
+                    self.clockVar[0] += 1
+                    self.clockVar[1] = 0
 
                 # --- Stopping playback
                 if self.stopping:
-                    self.clockVar['tick'] = 0
+                    self.clockVar[1] = 0
                     self.allOff()
                     self.client.send_message('/clockStop', 1)
                     self.stopping = False
@@ -100,7 +100,7 @@ class Player(multiprocessing.Process):
             return
 
         if n:
-            self.clockVar['barNum'] = n
+            self.clockVar[0] = n
         self.client.send_message('/clockStart', 1)
         self.playing.set()
 
@@ -119,16 +119,18 @@ class Engine(threading.Thread):
         self.instruments = []
 
         self.msgQueue = multiprocessing.Queue()
+        self.netRequestQueue = multiprocessing.Queue()
+        self.netReturnQueue = multiprocessing.Queue()
 
-        manager = multiprocessing.Manager()
         client = udp_client.SimpleUDPClient(CLIENT_ADDR, CLIENT_PORT)
-        self.clockVar = manager.dict()
+        self.clockVar = multiprocessing.Array('i', [0, 0])
         self.player = Player(client, self.msgQueue, self.clockVar)
 
-        self.currentBar = 0
-        self.status = STOPPED
+        self.networkEngine = NetworkEngine(self.netRequestQueue, self.netReturnQueue)
 
+        self.status = STOPPED
         self.stopRequest = multiprocessing.Event()
+
         self.player.start()
 
     def run(self):
@@ -156,7 +158,7 @@ class Engine(threading.Thread):
         for instrument in self.instruments:
             for n, m in enumerate(instrument.track.flatMeasures):
                 if m:
-                    for t, e in m.MIDIEvents.items():
+                    for t, e in m.MidiEvents.items():
                         addEvents(events, n, t, e)
 
         return events
@@ -175,20 +177,30 @@ class Engine(threading.Thread):
     def setBarNumber(self, n):
         if n < 0:
             n = 0
-        self.clockVar['barNum'] = n
+        #self.clockVar['barNum'] = n
+        self.clockVar[0] = n
 
     def stopPlaying(self):
         self.player.setStop()
         self.status = STOPPED
 
     def getTime(self):
-        return self.clockVar['barNum'], self.clockVar['tick']
+        return self.clockVar[0], self.clockVar[1]
 
     def addInstrument(self):
         id_ = len(self.instruments)
-        instrument = Instrument(id_, 'INS ' + str(id_), 1)
+        instrument = Instrument(id_, 'INS ' + str(id_), 1, self)
         self.instruments.append(instrument)
         return instrument
+
+    def getMeasures(self, instrumentID, barNums):
+        assert isinstance(barNums, (int, list, tuple))
+        try:
+            self.instruments[instrumentID].getMeasures(barNums)
+        except IndexError:
+            if isinstance(barNums, int):
+                return None
+            return [None]*len(barNums)
 
     def exportMidiFile(self, name='test.mid'):
         #allEvents = self.getAllEvents()

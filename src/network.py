@@ -3,6 +3,7 @@
 
 import time
 import random
+import multiprocessing
 
 import pickle as pkl
 
@@ -38,15 +39,10 @@ class NeuralNet():
         self.combinedNet = CombinedNetwork.from_saved_custom(weightsFolder, metaPredictor,
                                                              generation=True, compile_now=False)
 
-        #self.contextSize = self.combinedNet.params['context_size']
-
-        #self.vRhythm = self.combinedNet.params['rhythm_net_params'][2]
-        #self.vMelody = self.combinedNet.params['melody_net_params'][3]
         self.vocabulary = {
             'rhythm': self.combinedNet.params['rhythm_net_params'][2],
             'melody': self.combinedNet.params['melody_net_params'][3]
         }
-        #self.m = self.combinedNet.params['melody_bar_len']
 
         with open(trainingsDir + 'ChordGenerator.conversion_params', 'rb') as f:
             chordConversionParams = pkl.load(f)
@@ -104,7 +100,7 @@ class NeuralNet():
 
         embeddedMetaData = self._embedMetaData(kwargs['meta_data'])
 
-        if kwargs['lead_mode'] == 'none':
+        if 'lead_mode' not in kwargs or kwargs['lead_mode'] == 'none':
             leadRhythm = rhythmContexts[-1]
             leadMelody = melodyContexts[:, -1:, :]
         elif kwargs['lead_mode'] == 'both':
@@ -207,3 +203,14 @@ class NeuralNet():
             notes.append(note)
 
         return notes
+
+
+class NetworkEngine(multiprocessing.Process):
+
+    def __init__(self, requestQueue, returnQueue):
+        super(NetworkEngine, self).__init__()
+
+        self.requestQueue = requestQueue
+        self.returnQueue = returnQueue
+
+        self.stopRequest = multiprocessing.Event()
