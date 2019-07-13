@@ -18,7 +18,13 @@ DEFAULT_SECTION_PARAMS = {
 DEFAULT_GENERATE_PARAMS = {
     'sample_mode': 'dist',
     'lead_mode': 'melody',
-    'inject_mode': 'none'
+    'inject_mode': 1,
+    'injection_params': (('qb', 'eb'), 'maj'),
+    'lead_bar': None,
+    'prev_bars': None,
+    'chord_mode': 0,
+    'meta_data': None,
+    'octave': 4
 }
 
 def forceListLength(l, length, alt=None):
@@ -26,13 +32,15 @@ def forceListLength(l, length, alt=None):
         return l[:length]
     return l + [alt for _ in range(length - len(l))]
 
+
 class Measure:
     '''
     Measure: Holds note values and associated times
     '''
-    def __init__(self, id_, notes=None, events=None):
+    def __init__(self, id_, chan=1, notes=None, events=None):
 
         self.id_ = id_
+        self.chan = chan
         if notes:
             # Note: (nn, start_tick, end_tick), where nn=0 is a pause
             self.notes = notes
@@ -45,16 +53,15 @@ class Measure:
             self.notes = []
             self.empty = False
         else:
-            self.notes = []
-            self.events = []
-            self.empty = True
+            self.setEmpty()
 
+        self.genRequestSent = False
     def convertNotesToMidiEvents(self):
         events = defaultdict(list)
         for n in self.notes:
-            if n > 0:
-                events[n[1]].append(('/noteOn', (1, n[0], 100)))
-                events[n[2]].append(('/noteOff', (1, n[0], 100)))
+            if n[0] > 0:
+                events[n[1]].append(('/noteOn', (self.chan, n[0], 100)))
+                events[n[2]].append(('/noteOff', (self.chan, n[0], 100)))
         self.MidiEvents = dict(events)
 
     def isEmpty(self):
@@ -63,16 +70,25 @@ class Measure:
     def setNotes(self, notes):
         self.notes = notes
         self.convertNotesToMidiEvents()
+        self.empty = False
+        self.genRequestSent = False
 
-    def setEvents(self, events):
+    def setMidiEvents(self, events):
         self.events = events
         # self.convertMidiEventsToNotes()
+        self.empty = False
+        self.genRequestSent = False
+
+    def setEmpty(self):
+        self.notes = []
+        self.MidiEvents = dict()
+        self.empty = True
+
 
 class Track:
     '''
     Track: an ordered list of Sections
     '''
-
     def __init__(self):
         self.track = []
         self.flatMeasures = []
@@ -88,15 +104,18 @@ class Track:
             self.flatMeasures.extend(s.flatMeasures)
 
     def measuresAt(self, n):
+        ''' Returns None bars for n < 0 and n > length'''
         if isinstance(n, int):
+            if n < 0 or n >= len(self):
+                return None
             return self.flatMeasures[n]
-        return [self.flattenMeasures[b] for b in n]
+        return [self.measuresAt(b) for b in n]
 
     def getSectionStart(self, id_):
         ''' Returns the bar number of the first occurance of section ID '''
         barNum = 0
-        for s in track:
-            if s.id_ == id__:
+        for s in self.track:
+            if s.id_ == id_:
                 return barNum
             barNum += len(s)
         return None
@@ -109,10 +128,7 @@ class Track:
             self.flattenMeasures()
 
     def __len__(self):
-        if self.track.__len__() == 0:
-            return 0
-
-        return sum([len(s) for s in self.track])
+        return len(self.flatMeasures)
 
     def __repr__(self):
         return ''.join(map(str, self.track)) + '|'
@@ -122,22 +138,17 @@ class Section:
     '''
     Section: collection of parameters, attributes and properties of a musical section.
     '''
-
-    def __init__(self, name, id_, params=None, blank=False):
+    def __init__(self, name, id_, blank=False, **kwargs):
         self.name = name
         self.id_ = id_
 
-        if params:
-            self.params = params
-        else:
-            self.params = deepcopy(DEFAULT_SECTION_PARAMS)
+        self.params = deepcopy(DEFAULT_SECTION_PARAMS)
+        for k, v in kwargs.items():
+            self.params[k] = v
 
         self.blank = blank
 
-        #self.mainMeasures = [None]*self.params['length']
         self.mainMeasures = []
-        #self.altEnds = [[None]*self.params['loop_alt_len']
-        #                for _ in range(self.params['loop_alt_num'])]
         self.altEnds = [[]]
         self.flatMeasures = [None]*self.params['length']
         self.measures = dict()
@@ -147,13 +158,17 @@ class Section:
 
     def newMeasure(self, notes=None, events=None):
         id_ = self.measureCount
-        m = Measure(id_, notes=notes, events=events)
+        if 'chan' in self.params:
+            m = Measure(id_, chan=self.params['chan'], notes=notes, events=events)
+        else:
+            m = Measure(id_, notes=notes, events=events)
+
         self.measures[id_] = m
         self.measureCount += 1
         return m
 
     def changeParameter(self, **kwargs):
-        print('Section: changeParameter()', kwargs)
+        #print('Section: changeParameter()', kwargs)
         for key, val in kwargs.items():
             self.params[key] = val
 
@@ -186,18 +201,6 @@ class Section:
 
         return None
 
-    def generateAllMeasures(self):
-        if self.blank:
-            return
-        lenMainMeasures = self.params['length'] - self.params['loop_alt_len']
-        self.mainMeasures = [Measure(section=self) for _ in range(lenMainMeasures)]
-
-        numAlts = self.params['loop_alt_num']
-        lenAlts = self.params['loop_alt_len']
-        self.altEnds = [[Measure(section=self) for _ in range(lenAlts)] for _ in range(numAlts)]
-
-        self.flattenMeasures()
-
     def flattenMeasures(self):
         if self.blank:
             self.flatMeasures = [None]*self.params['length']
@@ -215,11 +218,6 @@ class Section:
 
         for i in range(self.params['loop_num']):
             track[i*length:i*length+lenMainMeasures] = main
-
-            #if i%numAlts < len(self.altEnds):
-            #    altEnd = forceListLength(self.altEnds[i%numAlts], lenAlts)
-            #else:
-            #    altEnd = [None for _ in range(lenAlts)]
             if lenAlts > 0:
                 altEnd = self.altEnds[i%numAlts][-lenAlts:]
                 track[i*length+lenMainMeasures:i*length+length] = altEnd
@@ -247,7 +245,6 @@ class Instrument:
         self.chan = chan
         self.engine = engine
 
-        # Should be a dictionary with section id
         self.sections = dict()
         self.sectionCount = 0
 
@@ -259,9 +256,9 @@ class Instrument:
 
         return self.track.measuresAt(n)
 
-    def newSection(self, params=None, blank=False):
+    def newSection(self, blank=False, **params):
         idx = self.sectionCount
-        section = Section(chr(65+idx)+str(self.id_), idx, params, blank=blank)
+        section = Section(chr(65+idx)+str(self.id_), idx, blank=blank, chan=self.id_, **params)
         self.sections[idx] = section
         self.sectionCount += 1
         self.track.appendSection(section)
@@ -270,24 +267,63 @@ class Instrument:
     def duplicateSection(self, id_):
         self.track.appendSection(self.sections[id_])
 
+    def compileMidiMessages(self):
+        def addEvents(d, n, t, e):
+            if n not in events:
+                d[n] = dict()
+
+            if t not in events[n]:
+                d[n][t] = []
+
+            d[n][t].extend(e)
+
+        events = dict()
+        for n, m in enumerate(self.track.flatMeasures):
+            if m:
+                for t, e in m.MidiEvents.items():
+                    addEvents(events, n, t, e)
+
+        return events
+
     def changeSectionParameters(self, id_, **newParams):
         self.sections[id_].changeParameter(**newParams)
         self.track.flattenMeasures()
 
-    def requestGenerateMeasures(self, section):
+    def requestGenerateMeasures(self, section, gen_all=False):
+        ''' Compiles and sends request for seciton to generate new bars '''
         sectionStart = self.track.getSectionStart(section.id_)
         leadID = section.params.get('lead_num', None)
-        if leadID:
-            leadBars = self.engine.getMeasures(leadID, range(sectionStart, sectionStart+len(section)))
-        else:
-            leadBars = self.measuresAt(range(sectionStart-1, sectionStart+len(section)-1))
 
+        for i, m in enumerate(section.flatMeasures):
+            if not gen_all and not m.isEmpty():
+                continue
+            if m.genRequestSent:
+                continue
 
+            request = deepcopy(DEFAULT_GENERATE_PARAMS)
+            for k, v in section.params.items():
+                request[k] = v
 
+            if leadID:
+                leadBar = self.engine.measuresAt(leadID, sectionStart+i)
+            else:
+                leadBar = self.measuresAt(sectionStart+i-1)
 
+            request['lead_bar'] = leadBar
+            request['prev_bars'] = self.measuresAt(range(sectionStart+i-4, sectionStart+i))
+
+            measureAddress = (self.id_, section.id_, m.id_, )
+            requires = [b for b in ([leadBar] + request['prev_bars']) if b]
+
+            m.genRequestSent = True
+
+            self.engine.addPendingRequest({
+                'request': request,
+                'requires': requires,
+                'measure_address': measureAddress})
 
     def __len__(self):
         return len(self.track)
 
     def __repr__(self):
-        return repr(self.track)
+        return self.name + ': ' + repr(self.track)

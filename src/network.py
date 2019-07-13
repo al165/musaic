@@ -14,6 +14,17 @@ from v9.Nets.MetaEmbedding import MetaEmbedding
 from v9.Nets.MetaPredictor import MetaPredictor
 from v9.Nets.CombinedNetwork import CombinedNetwork
 
+DEFAULT_META_DATA = {
+    'ts': '4/4',
+    'span': 10.0,
+    'jump': 1.5,
+    'cDens': 0.25,
+    'cDepth': 1.0,
+    'tCent': 62.0,
+    'rDens': 1.2,
+    'pos': 0.0,
+    'expression': 0
+}
 
 class NeuralNet():
 
@@ -73,7 +84,7 @@ class NeuralNet():
             rhythmContexts = np.zeros((4, 1, 4))
             melodyContexts = np.zeros((1, 4, 48))
             for i, b in enumerate(kwargs['prev_bars'][-4:]):
-                r, m = self.convertNotesToContext(b)
+                r, m = self.convertBarToContext(b)
                 rhythmContexts[i, :, :] = r
                 melodyContexts[:, i, :] = m
         else:
@@ -100,14 +111,14 @@ class NeuralNet():
 
         embeddedMetaData = self._embedMetaData(kwargs['meta_data'])
 
-        if 'lead_mode' not in kwargs or kwargs['lead_mode'] == 'none':
+        if 'lead_mode' not in kwargs or not kwargs['lead_mode']:
             leadRhythm = rhythmContexts[-1]
             leadMelody = melodyContexts[:, -1:, :]
         elif kwargs['lead_mode'] == 'both':
-            leadRhythm, leadMelody = self.convertNotesToContext(kwargs['lead_bar'])
+            leadRhythm, leadMelody = self.convertBarToContext(kwargs['lead_bar'])
         elif kwargs['lead_mode'] == 'melody':
             leadRhythm = rhythmContexts[-1]
-            _, leadMelody = self.convertNotesToContext(kwargs['lead_bar'])
+            _, leadMelody = self.convertBarToContext(kwargs['lead_bar'])
 
         output = self.combinedNet.predict(x=[*rhythmContexts,
                                              melodyContexts,
@@ -127,6 +138,8 @@ class NeuralNet():
         return self.convertContextToNotes(sampledRhythm[0], sampledMelody[0], octave=octave)
 
     def _embedMetaData(self, metaData):
+        if not metaData:
+            metaData = DEFAULT_META_DATA
         values = []
         for k in sorted(metaData.keys()):
             if k == 'ts':
@@ -138,17 +151,17 @@ class NeuralNet():
 
         return self.metaEmbedder.predict(md)
 
-    def convertNotesToContext(self, notes):
+    def convertBarToContext(self, measure):
         '''
         Converts a list of notes (nn, start_tick, end_tick) to context
         format for network to use
         TODO: handle chords
         '''
 
-        if not notes:
+        if not measure or measure.isEmpty():
             # empty bar...
             rhythm = [self.rhythmDict[()] for _ in range(4)]
-            melody = [random.choice([1, 7] for _ in range(48))]
+            melody = [random.choice([1, 7]) for _ in range(48)]
             return np.array([rhythm]), np.array([[melody]])
 
         rhythm = []
@@ -156,8 +169,10 @@ class NeuralNet():
         pcs = []
 
         onTicks = [False] * 96
-        for n in notes:
+        for n in measure.notes:
             try:
+                if n[0] <= 0:
+                    continue
                 onTicks[n[1]] = True
                 melody[n[1]//2] = n[0]%12 + 1
                 pcs.append(n[0]%12+1)
@@ -182,7 +197,6 @@ class NeuralNet():
 
         return np.array([rhythm]), np.array([[melody]])
 
-
     def convertContextToNotes(self, rhythmContext, melodyContext, octave=4):
         notes = []
         onTicks = [False] * 96
@@ -196,9 +210,9 @@ class NeuralNet():
         for i, tick in enumerate(startTicks):
             nn = 12*(octave+1) + melodyContext[i//2] - 1
             try:
-                note = nn, tick, startTicks[i+1]
+                note = (int(nn), tick, startTicks[i+1])
             except IndexError:
-                note = nn, tick, 96
+                note = (int(nn), tick, 96)
 
             notes.append(note)
 
@@ -214,3 +228,29 @@ class NetworkEngine(multiprocessing.Process):
         self.returnQueue = returnQueue
 
         self.stopRequest = multiprocessing.Event()
+
+        self.network = None
+
+    def run(self):
+        if not self.network:
+            self.network = NeuralNet()
+
+        while not self.stopRequest.is_set():
+            try:
+                requestMsg = self.requestQueue.get(timeout=1)
+                print('[NetworkEngine]', 'request recieved from', requestMsg['measure_address'])
+            except multiprocessing.queues.Empty:
+                continue
+
+            print('generating result...')
+            result = self.network.generateBar(**requestMsg['request'])
+            print('generateed result')
+
+            self.returnQueue.put({'measure_address': requestMsg['measure_address'],
+                                  'result': result})
+
+    def join(self, timeout=1):
+        self.stopRequest.set()
+        super(NetworkEngine, self).join(timeout)
+
+# EOF

@@ -3,9 +3,8 @@
 
 import time
 import threading
-import multiprocessing
-
 import tkinter as tk
+import multiprocessing
 
 from pythonosc import udp_client
 from mido import Message, MidiFile, MidiTrack, MetaMessage
@@ -16,7 +15,8 @@ from gui import TimeLine, InstrumentPanel
 
 APP_NAME = "musAIc (v1.0_dev)"
 
-CLIENT_ADDR = '127.0.0.1'
+#CLIENT_ADDR = '127.0.0.1'
+CLIENT_ADDR = '192.168.78.48'
 CLIENT_PORT = 57120
 
 STOPPED = 0
@@ -32,12 +32,9 @@ class Player(multiprocessing.Process):
         self.msgQueue = msgQueue
         self.clockVar = clockVar
 
-        #self.clockVar['barNum'] = 0
-        #self.clockVar['tick'] = 0
-        #self.clockVar = [0, 0]
-
-        # self.messages  = {barNum: {tick: [('/addr', (args))]}}
-        self.messages = dict()
+        # {barNum: {tick: [('/addr', (args))]}}
+        #self.messages = dict()
+        self.instrumentMessages = dict()
 
         self.stopRequest = multiprocessing.Event()
         self.playing = multiprocessing.Event()
@@ -49,25 +46,30 @@ class Player(multiprocessing.Process):
                 # --- Before measure starts
                 print('[PLAYER]', 'Bar', self.clockVar[0])
                 try:
-                    self.messages = self.msgQueue.get(block=False)
+                    while True:
+                        # format (id, messages)
+                        msg = self.msgQueue.get(block=False)
+                        self.instrumentMessages[msg[0]] = msg[1]
                 except multiprocessing.queues.Empty:
                     pass
 
                 # BPM=80
                 tickTime = (60/80)/24
 
-                measure = self.messages.get(self.clockVar[0], dict())
+                #measures = self.messages.get(self.clockVar[0], dict())
+                measures = [m.get(self.clockVar[0], dict())
+                            for m in self.instrumentMessages.values()]
                 clockOn = time.time()
 
                 # --- During measure
                 for tick in range(24 * 4):
                     self.client.send_message('/clock', tick)
                     self.clockVar[1] = tick
-                    #print(measure[tick])
-                    for event in measure.get(tick, []):
-                        addr, args = event
-                        print(addr, args)
-                        self.client.send_message(addr, args)
+                    for measure in measures:
+                        for event in measure.get(tick, []):
+                            addr, args = event
+                            print(addr, args)
+                            self.client.send_message(addr, args)
 
                     if self.stopRequest.is_set():
                         return
@@ -111,14 +113,18 @@ class Player(multiprocessing.Process):
     def allOff(self):
         self.client.send_message('/panic', 0)
 
+
 class Engine(threading.Thread):
 
-    def __init__(self):
+    def __init__(self, guiHandle=None):
         super(Engine, self).__init__()
+
+        self.guiHandle = guiHandle
 
         self.instruments = []
 
         self.msgQueue = multiprocessing.Queue()
+        self.requests = []
         self.netRequestQueue = multiprocessing.Queue()
         self.netReturnQueue = multiprocessing.Queue()
 
@@ -132,44 +138,52 @@ class Engine(threading.Thread):
         self.stopRequest = multiprocessing.Event()
 
         self.player.start()
+        self.networkEngine.start()
 
     def run(self):
-        pass
-        #while not self.stopRequest.is_set():
+        while not self.stopRequest.is_set():
+            # find all requests that meet requirements and send to network...
+            unsentMsgs = []
+            for msg in self.requests:
+                if not any([b.isEmpty() for b in msg['requires']]):
+                    print('[Engine]', 'adding measure', msg['measure_address'], 'to requests queue')
+                    self.netRequestQueue.put(msg)
+                else:
+                    unsentMsgs.append(msg)
+            self.requests = unsentMsgs
+
+            try:
+                result = self.netReturnQueue.get(False)
+                print('[Engine]', 'recieved result for measure', result['measure_address'], ':')
+                print(result['result'])
+                self.getMeasure(*result['measure_address']).setNotes(result['result'])
+
+                if self.guiHandle:
+                    self.guiHandle.requestRedraw()
+
+            except multiprocessing.queues.Empty:
+                continue
+
+            time.sleep(1/10)
 
     def join(self, timeout=None):
         self.stopRequest.set()
-        self.player.join(timeout=timeout)
+        self.player.join(timeout)
+        self.networkEngine.join(timeout)
         super(Engine, self).join(timeout)
 
-    def getAllEvents(self):
-        print('[Engine]', 'building MIDI events')
-        def addEvents(d, n, t, e):
-            if n not in events:
-                d[n] = dict()
-
-            if t not in events[n]:
-                d[n][t] = []
-
-            d[n][t].extend(e)
-
-        events = dict()
-        # messages  = {barNum: {tick: [('/addr', (args))]}}
-        for instrument in self.instruments:
-            for n, m in enumerate(instrument.track.flatMeasures):
-                if m:
-                    for t, e in m.MidiEvents.items():
-                        addEvents(events, n, t, e)
-
-        return events
+    def sendInstrumentEvents(self, id_=None):
+        if id_:
+            self.msgQueue.put((id_, self.instruments[id_].compileMidiMessages()))
+        else:
+            for instrument in self.instruments:
+                self.msgQueue.put((instrument.id_, instrument.compileMidiMessages()))
 
     def startPlaying(self):
         while not self.msgQueue.empty():
             _ = self.msgQueue.get()
 
-        events = self.getAllEvents()
-        if events:
-            self.msgQueue.put(events)
+        self.sendInstrumentEvents()
 
         self.player.setPlaying()
         self.status = PLAYING
@@ -177,7 +191,6 @@ class Engine(threading.Thread):
     def setBarNumber(self, n):
         if n < 0:
             n = 0
-        #self.clockVar['barNum'] = n
         self.clockVar[0] = n
 
     def stopPlaying(self):
@@ -189,18 +202,30 @@ class Engine(threading.Thread):
 
     def addInstrument(self):
         id_ = len(self.instruments)
-        instrument = Instrument(id_, 'INS ' + str(id_), 1, self)
+        instrument = Instrument(id_, 'INS ' + str(id_), id_+1, self)
         self.instruments.append(instrument)
         return instrument
 
-    def getMeasures(self, instrumentID, barNums):
-        assert isinstance(barNums, (int, list, tuple))
+    def measuresAt(self, instrumentID, n):
+        assert isinstance(n, (int, list, tuple))
         try:
-            self.instruments[instrumentID].getMeasures(barNums)
+            self.instruments[instrumentID].getMeasures(n)
         except IndexError:
-            if isinstance(barNums, int):
+            print('[Engine]', 'cannot fint instrument', instrumentID)
+            if isinstance(n, int):
                 return None
-            return [None]*len(barNums)
+            return [None]*len(n)
+
+    def getMeasure(self, instrumentID, sectionID, measureID):
+        try:
+            m = self.instruments[instrumentID].sections[sectionID].measures[measureID]
+        except (IndexError, KeyError):
+            print('[Engine]', f'Cannot find measure {instrumentID}:{sectionID}:{measureID}')
+            return None
+        return m
+
+    def addPendingRequest(self, requestMsg):
+        self.requests.append(requestMsg)
 
     def exportMidiFile(self, name='test.mid'):
         #allEvents = self.getAllEvents()
@@ -214,10 +239,11 @@ class Engine(threading.Thread):
             for n, m in enumerate(instrument.track.flatMeasures):
                 if not m:
                     continue
-                for t, e in m.MIDIEvents.items():
+                for t, e in m.MidiEvents.items():
                     for msg in e:
                         events.append((n*96+t, msg))
 
+            # sort by time, then note off events
             events.sort(key=lambda x: x[0])
 
             track.append(MetaMessage('track_name', name=instrument.name))
@@ -241,15 +267,16 @@ class Engine(threading.Thread):
         mid.save(name)
         print('[Engine]', 'done')
 
+
 class MusaicApp:
 
     def __init__(self):
         self.root = tk.Tk()
         self.root.title(APP_NAME)
         self.mainframe = tk.Frame(self.root)
-        self.mainframe.pack()
+        self.mainframe.pack(fill='both', expand=True)
 
-        self.engine = Engine()
+        self.engine = Engine(guiHandle=self)
 
         self.addInsButton = tk.Button(self.mainframe, text='+', command=self.addInstrument,
                                       width=40)
@@ -258,18 +285,20 @@ class MusaicApp:
         self.instrumentPanels = []
         self.timeLine = TimeLine(self.mainframe, self.instrumentPanels, self.engine)
 
-        playButton = tk.Button(self.mainframe, text='play', command=self.engine.startPlaying)
+        mainControls = tk.Frame(self.mainframe)
+        playButton = tk.Button(mainControls, text='play', command=self.engine.startPlaying)
         playButton.grid(row=0, column=0)
-        stopButton = tk.Button(self.mainframe, text='stop', command=self.engine.stopPlaying)
+        stopButton = tk.Button(mainControls, text='stop', command=self.engine.stopPlaying)
         stopButton.grid(row=0, column=1)
-        saveButton = tk.Button(self.mainframe, text='export', command=self.engine.exportMidiFile)
+        saveButton = tk.Button(mainControls, text='export', command=self.engine.exportMidiFile)
         saveButton.grid(row=0, column=2)
+        mainControls.grid(row=0, column=0)
 
         self.guiLoop()
         self.engine.start()
         self.root.mainloop()
 
-        print('Closing', end='')
+        print('Closing musaAIc', end='')
         self.engine.join(timeout=1)
         print()
 
@@ -278,6 +307,8 @@ class MusaicApp:
         panel = InstrumentPanel(self.mainframe, instrument, self.engine, self.timeLine)
 
         self.instrumentPanels.append(panel)
+        for i, insPanel in enumerate(self.instrumentPanels):
+            insPanel.updateLeadOptions([j for j in range(len(self.instrumentPanels)) if j != i])
         self.addInsButton.grid(row=len(self.instrumentPanels)+2)
 
     def guiLoop(self):
@@ -286,7 +317,12 @@ class MusaicApp:
         for ip in self.instrumentPanels:
             ip.updateCursor(barNum, tick)
 
-        self.root.after(1000//25, self.guiLoop)
+        self.root.after(1000//20, self.guiLoop)
+
+    def requestRedraw(self):
+        for instrumentPanel in self.instrumentPanels:
+            instrumentPanel.updateCanvas()
+
 
 if __name__ == '__main__':
     app = MusaicApp()
