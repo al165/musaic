@@ -4,11 +4,14 @@
 import time
 import random
 import multiprocessing
+from copy import deepcopy
 
 import pickle as pkl
 
 import numpy as np
+import numpy.random as rand
 
+from core import DEFAULT_SECTION_PARAMS
 from v9.Nets.ChordNetwork import ChordNetwork
 from v9.Nets.MetaEmbedding import MetaEmbedding
 from v9.Nets.MetaPredictor import MetaPredictor
@@ -26,11 +29,26 @@ DEFAULT_META_DATA = {
     'expression': 0
 }
 
+
+class RandomPlayer():
+    ''' For testing purpose only! '''
+    def __init__(self):
+        print('[RandomPlayer]', 'Using random player for testing')
+
+    def generateBar(self, **kwargs):
+        notes = []
+        for i in range(4):
+            note = (random.randint(60, 80), i*24, (i+1)*24)
+            notes.append(note)
+
+        return notes
+
+
 class NeuralNet():
 
     def __init__(self):
 
-        print('[NeuralNet]', 'Initialising')
+        print('[NeuralNet]', 'Initialising...')
         startTime = time.time()
 
         trainingsDir = './v9/Trainings/first_with_lead/'
@@ -65,7 +83,10 @@ class NeuralNet():
         self.chordNet = ChordNetwork.from_saved_custom(trainingsDir + '/chord/',
                                                        load_melody_encoder=True)
 
-        print('[NeuralNet]', 'Neural network loaded in', int(time.time() - startTime), 'seconds')
+        # predict some junk data to fully initilise model...
+        self.generateBar(**DEFAULT_SECTION_PARAMS)
+
+        print('\n[NeuralNet]', 'Neural network loaded in', int(time.time() - startTime), 'seconds\n')
 
     def generateBar(self, octave=4, **kwargs):
         ''' Expecting...
@@ -74,51 +95,18 @@ class NeuralNet():
             - 'sample_mode'
             - 'chord_mode'
             - 'lead_mode'
-            - 'inject_mode'
+            - 'context_mode'
             - 'injection_params'
             - 'meta_data'
             - 'octave'
         '''
 
-        if kwargs['inject_mode'] == 'none':
-            rhythmContexts = np.zeros((4, 1, 4))
-            melodyContexts = np.zeros((1, 4, 48))
-            for i, b in enumerate(kwargs['prev_bars'][-4:]):
-                r, m = self.convertBarToContext(b)
-                rhythmContexts[i, :, :] = r
-                melodyContexts[:, i, :] = m
-        else:
-            rhythmPool = []
-            for rhythmType in kwargs['injection_params'][0]:
-                rhythmPool.extend({
-                    'qb': [self.rhythmDict[(0.0,)]],
-                    'lb': [self.rhythmDict[()]],
-                    'eb': [self.rhythmDict[(0.0, 0.5)],
-                           self.rhythmDict[(0.5,)]],
-                    'fb': [self.rhythmDict[(0.0, 0.25, 0.5, 0.75)],
-                           self.rhythmDict[(0.0, 0.25, 0.5)]],
-                    'tb': [self.rhythmDict[()]],
-                }[rhythmType])
-            rhythmContexts = [np.random.choice(rhythmPool, size=(1, 4)) for _ in range(4)]
+        print('[NeuralNet]', 'generateBar with params')
+        print(kwargs)
 
-            melodyPool = {
-                'maj': [1, 3, 5, 6, 8, 10, 12],
-                'min': [1, 3, 4, 6, 8, 10, 11],
-                'pen': [1, 4, 6, 8, 11],
-                '5th': [1, 8]
-            }[kwargs['injection_params'][1]]
-            melodyContexts = np.random.choice(melodyPool, size=(1, 4, 48))
-
-        embeddedMetaData = self._embedMetaData(kwargs['meta_data'])
-
-        if 'lead_mode' not in kwargs or not kwargs['lead_mode']:
-            leadRhythm = rhythmContexts[-1]
-            leadMelody = melodyContexts[:, -1:, :]
-        elif kwargs['lead_mode'] == 'both':
-            leadRhythm, leadMelody = self.convertBarToContext(kwargs['lead_bar'])
-        elif kwargs['lead_mode'] == 'melody':
-            leadRhythm = rhythmContexts[-1]
-            _, leadMelody = self.convertBarToContext(kwargs['lead_bar'])
+        rhythmContexts, melodyContexts = self.getContexts(kwargs)
+        embeddedMetaData = self.embedMetaData(kwargs['meta_data'])
+        leadRhythm, leadMelody = self.getLead(kwargs, rhythmContexts, melodyContexts)
 
         output = self.combinedNet.predict(x=[*rhythmContexts,
                                              melodyContexts,
@@ -126,18 +114,15 @@ class NeuralNet():
                                              leadRhythm,
                                              leadMelody])
 
-        if kwargs['sample_mode'] == 'argmax':
-            sampledRhythm = np.argmax(output[0], axis=-1)
-            sampledMelody = np.argmax(output[1], axis=-1)
-        elif kwargs['sample_mode'] == 'dist':
-            sampledRhythm = np.array([[np.random.choice(self.vocabulary['rhythm'], p=dist)
-                                       for dist in output[0][0]]])
-            sampledMelody = np.array([[np.random.choice(self.vocabulary['melody'], p=dist)
-                                       for dist in output[1][0]]])
+        sampledRhythm, sampledMelody, sampledChords = self.sampleOutput(output, kwargs)
 
-        return self.convertContextToNotes(sampledRhythm[0], sampledMelody[0], octave=octave)
+        return self.convertContextToNotes(sampledRhythm[0],
+                                          sampledMelody[0],
+                                          sampledChords,
+                                          kwargs,
+                                          octave=octave)
 
-    def _embedMetaData(self, metaData):
+    def embedMetaData(self, metaData):
         if not metaData:
             metaData = DEFAULT_META_DATA
         values = []
@@ -151,6 +136,103 @@ class NeuralNet():
 
         return self.metaEmbedder.predict(md)
 
+    def getContexts(self, kwargs):
+        mode = kwargs.get('context_mode', None)
+        injection_params = kwargs.get('injection_params',
+                                      DEFAULT_SECTION_PARAMS['injection_params'])
+        prev_bars = kwargs.get('prev_bars')
+
+        if mode == 'inject':
+            rhythmPool = []
+            for rhythmType in injection_params[0]:
+                rhythmPool.extend({
+                    'qb': [self.rhythmDict[(0.0,)]],
+                    'lb': [self.rhythmDict[()]],
+                    'eb': [self.rhythmDict[(0.0, 0.5)],
+                           self.rhythmDict[(0.5,)]],
+                    'fb': [self.rhythmDict[(0.0, 0.25, 0.5, 0.75)],
+                           self.rhythmDict[(0.0, 0.25, 0.5)]],
+                    'tb': [self.rhythmDict[(0.0, 0.3333, 0.6667)]],
+                }[rhythmType])
+            rhythmContexts = [np.random.choice(rhythmPool, size=(1, 4)) for _ in range(4)]
+
+            melodyPool = {
+                'maj': [1, 3, 5, 6, 8, 10, 12],
+                'min': [1, 3, 4, 6, 8, 10, 11],
+                'pen': [1, 4, 6, 8, 11],
+                '5th': [1, 8]
+            }[injection_params[1]]
+            melodyContexts = np.random.choice(melodyPool, size=(1, 4, 48))
+        else:
+            rhythmContexts = np.zeros((4, 1, 4))
+            melodyContexts = np.zeros((1, 4, 48))
+            for i, b in enumerate(prev_bars[-4:]):
+                r, m = self.convertBarToContext(b)
+                rhythmContexts[i, :, :] = r
+                melodyContexts[:, i, :] = m
+
+        #print(rhythmContexts, melodyContexts)
+
+        return rhythmContexts, melodyContexts
+
+    def getLead(self, kwargs, rhythmContexts, melodyContexts):
+        if 'lead_mode' not in kwargs or not kwargs['lead_mode']:
+            leadRhythm = rhythmContexts[-1]
+            leadMelody = melodyContexts[:, -1:, :]
+        elif kwargs['lead_mode'] == 'both':
+            leadRhythm, leadMelody = self.convertBarToContext(kwargs['lead_bar'])
+        elif kwargs['lead_mode'] == 'melody':
+            leadRhythm = rhythmContexts[-1]
+            _, leadMelody = self.convertBarToContext(kwargs['lead_bar'])
+
+        return leadRhythm, leadMelody
+
+    def sampleOutput(self, output, kwargs):
+        mode = kwargs.get('sample_mode', 'dist')
+        chord_num = kwargs.get('chord_mode', 1)
+
+        print('[NeuralNet]', mode)
+
+        if mode == 'argmax' or mode == 'best':
+            sampledRhythm = np.argmax(output[0], axis=-1)
+            sampledMelody = np.argmax(output[1], axis=-1)
+            sampledChords = [list(rand.choice(self.vocabulary['melody'], p=curr_p,
+                                              size=chord_num, replace=True)) for curr_p in output[1][0]]
+        elif mode == 'dist':
+            sampledRhythm = np.array([[np.random.choice(self.vocabulary['rhythm'], p=dist)
+                                       for dist in output[0][0]]])
+            sampledMelody = np.array([[np.random.choice(self.vocabulary['melody'], p=dist)
+                                       for dist in output[1][0]]])
+            sampledChords = [list(rand.choice(self.vocabulary['melody'], p=curr_p, size=chord_num,
+                                           replace=True)) for curr_p in output[1][0]]
+        elif mode == 'top':
+            # Random from top 5 predictions....
+            r = []
+            sampledChords = []
+            for i in range(4):
+                top5_rhythm_indices = np.argsort(output[0][0][i], axis=-1)[-5:]
+
+                r_probs = output[0][0][i][top5_rhythm_indices]
+                r_probs /= sum(r_probs)
+
+                r.append(rand.choice(top5_rhythm_indices, p=r_probs))
+
+            sampledRhythm = np.array([r])
+            m = []
+
+            for i in range(len(output[1][0][0])):
+                top5_m_indices = np.argsort(output[1][0][i], axis=-1)[-5:]
+                m_probs = output[1][0][i][top5_m_indices]
+                m_probs /= sum(m_probs)
+
+                m.append(rand.choice(top5_m_indices, p=m_probs))
+                sampledChords.append(list(rand.choice(top5_m_indices, p=m_probs,
+                                                       replace=True, size=chord_num)))
+            sampledMelody = np.array([m])
+
+        print(sampledRhythm, sampledMelody, sampledChords)
+        return sampledRhythm, sampledMelody, sampledChords
+
     def convertBarToContext(self, measure):
         '''
         Converts a list of notes (nn, start_tick, end_tick) to context
@@ -163,6 +245,8 @@ class NeuralNet():
             rhythm = [self.rhythmDict[()] for _ in range(4)]
             melody = [random.choice([1, 7]) for _ in range(48)]
             return np.array([rhythm]), np.array([[melody]])
+
+        print(measure.notes)
 
         rhythm = []
         melody = [-1]*48
@@ -191,15 +275,29 @@ class NeuralNet():
                 print('[NeuralNet]', 'Beat not found, using eigth note...')
                 rhythm.append(self.rhythmDict[(0.0, 0.5)])
 
+        if len(pcs) == 0:
+            pcs = [1, 8]
+
         for j in range(48):
             if melody[j] == -1:
                 melody[j] = random.choice(pcs)
 
         return np.array([rhythm]), np.array([[melody]])
 
-    def convertContextToNotes(self, rhythmContext, melodyContext, octave=4):
+    def convertContextToNotes(self, rhythmContext, melodyContext,
+                              chordContexts, kwargs, octave=4):
+
+        print(rhythmContext.shape, melodyContext.shape)
+
+        def makeNote(pc, startTick, endTick):
+            nn = 12*(octave+1) + pc - 1
+            note = (int(nn), startTick, endTick)
+            return note
+
         notes = []
         onTicks = [False] * 96
+        chord_num = kwargs.get('chord_mode', 1)
+
         for i, beat in enumerate(rhythmContext):
             b = self.rhythmDict[beat]
             for onset in b:
@@ -208,13 +306,46 @@ class NeuralNet():
         startTicks = [i for i in range(96) if onTicks[i]]
 
         for i, tick in enumerate(startTicks):
-            nn = 12*(octave+1) + melodyContext[i//2] - 1
             try:
-                note = (int(nn), tick, startTicks[i+1])
-            except IndexError:
-                note = (int(nn), tick, 96)
+                endTick = startTicks[i+1]
+            except:
+                endTick = 96
+            pc = melodyContext[i//2]
 
-            notes.append(note)
+            if chord_num == 0:
+                if pc >= 12:
+                    # draw chord intervals...
+                    if 'meta_data' not in kwargs or kwargs['meta_data'] == None:
+                        kwargs['meta_data'] = deepcopy(DEFAULT_META_DATA)
+
+                    values = []
+                    for k in sorted(kwargs['meta_data'].keys()):
+                        if k == 'ts':
+                            values.extend([4, 4])
+                        else:
+                            values.append(kwargs['meta_data'][k])
+                    md = np.tile(values, (1, 1))
+
+                    chord_outputs = self.chordNet.predict(
+                        x=[np.array([[pc]]), np.array([[melodyContext]]), md]
+                    )
+                    if kwargs['sample_mode'] == 'dist' or kwargs['sample_mode'] == 'top':
+                        chord = rand.choice(len(chord_outputs[0]), p=chord_outputs[0])
+                    else:
+                        chord = np.argmax(chordOutputs[0], axis=-1)
+
+                    intervals = self.chordDict[chord]
+                    for interval in intervals:
+                        notes.append(makeNote(pc+interval, tick, endTick))
+
+                else:
+                    notes.append(makeNote(pc, tick, endTick))
+
+            elif chord_num == 1:
+                notes.append(makeNote(pc, tick, endTick))
+            else:
+                for chord_pc in chordContexts[i//2]:
+                    notes.append(makeNote(chord_pc, tick, endTick))
 
         return notes
 
@@ -234,6 +365,8 @@ class NetworkEngine(multiprocessing.Process):
     def run(self):
         if not self.network:
             self.network = NeuralNet()
+            #self.network = RandomPlayer()
+            #print('[NetworkEngine]', 'network loaded')
 
         while not self.stopRequest.is_set():
             try:
@@ -249,8 +382,11 @@ class NetworkEngine(multiprocessing.Process):
             self.returnQueue.put({'measure_address': requestMsg['measure_address'],
                                   'result': result})
 
+            time.sleep(1/10)
+
     def join(self, timeout=1):
         self.stopRequest.set()
         super(NetworkEngine, self).join(timeout)
+
 
 # EOF

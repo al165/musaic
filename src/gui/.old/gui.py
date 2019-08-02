@@ -81,14 +81,14 @@ class TimeLine(tk.Frame):
         self.timelineFrame = tk.Frame(root)
         self.timelineFrame.grid(row=1, column=1, sticky='ew')
         self.timelineCanvas = tk.Canvas(self.timelineFrame, width=1200, height=16, bg='grey')
-        self.timelineCanvas.grid(row=0, column=0, sticky='ew')
+        self.timelineCanvas.grid(row=1, column=0, sticky='ew')
 
         self.timelineCursor = self.timelineCanvas.create_line(0, 0, 0, 16, width=3, fill='orange')
 
-        self.hsb = tk.Scrollbar(self.timelineFrame, orient='horizontal', command=self.scrollTracks)
-        self.hsb.grid(row=1, column=0, sticky='ew')
+        hsb = tk.Scrollbar(self.timelineFrame, orient='horizontal', command=self.scrollTracks)
+        hsb.grid(row=0, column=0, sticky='ew')
 
-        self.timelineCanvas.config(xscrollcommand=self.hsb.set)
+        self.timelineCanvas.config(xscrollcommand=hsb.set)
         self.timelineCanvas.bind('<Button-1>', self.onClick)
 
     def updateCanvas(self):
@@ -98,10 +98,11 @@ class TimeLine(tk.Frame):
         # find largest bounding box
         n = max([len(p.instrument) for p in self.instrumentPanels] + [0])
 
-        for i in range(n+1):
+        for i in range(n):
             x = i * 80
-            self.timelineCanvas.create_text(x, 7, text='{:>3}'.format(i), anchor='w')
+            self.timelineCanvas.create_text(x, 7, text='{:>3}'.format(i+1), anchor='w')
             self.timelineCanvas.create_line(x, 0, x, 20)
+        self.timelineCanvas.create_line(n*80, 0, n*80, 20)
 
         self.timelineCursor = self.timelineCanvas.create_line(cursorCoords, width=3, fill='orange')
 
@@ -149,8 +150,8 @@ class InstrumentPanel():
         deleteButton.grid(row=0, column=0)
         nameLabel = tk.Label(controls, text=self.instrument.name)
         nameLabel.grid(row=0, column=1, columnspan=2)
-        chanLabel = tk.Label(controls, text=instrument.chan)
-        chanLabel.grid(row=0, column=3)
+        #chanLabel = tk.Label(controls, text=instrument.chan)
+        #chanLabel.grid(row=0, column=3)
         addSectionButton = tk.Button(controls, text='+', command=self.newSection)
         addSectionButton.grid(row=1, column=0)
         duplicateSectionButton = tk.Button(controls, text='=',
@@ -161,13 +162,13 @@ class InstrumentPanel():
         moveLeftButton = tk.Button(controls, text='<', command=self.moveSectionLeft)
         moveLeftButton.grid(row=1, column=3)
 
-
         # Selected section controls
         sectionParams = tk.Frame(controls, bd=2, relief='sunken')
         sectionParams.grid(row=2, column=0, columnspan=4, sticky='nsew')
 
         self.paramVars = {
             'name': tk.Label(sectionParams, text=''),
+            'chan': PropertyBox(controls, from_=1, to_=8, callback=self.setChannel),
             'length': PropertyBox(sectionParams, from_=1, to_=32, callback=self.setParameter),
             'loop_num': PropertyBox(sectionParams, from_=1, to_=64, callback=self.setParameter),
             'loop_alt_num': PropertyBox(sectionParams, from_=2, to_=8, callback=self.setParameter),
@@ -175,6 +176,7 @@ class InstrumentPanel():
         }
 
         self.paramVars['name'].grid(row=0, column=0, columnspan=4, sticky='ew')
+        self.paramVars['chan'].grid(row=0, column=3)
         self.paramVars['length'].grid(row=1, column=0, sticky='ew')
         self.paramVars['loop_num'].grid(row=1, column=1, sticky='ew')
         self.paramVars['loop_alt_num'].grid(row=1, column=2, sticky='ew')
@@ -183,11 +185,14 @@ class InstrumentPanel():
         self.leadVar = tk.StringVar(controls)
         self.leadVar.trace('w', self.changeLead)
         self.leadSelection = tk.Spinbox(sectionParams, textvariable=self.leadVar, values=('none'), width=4)
-        self.leadSelection.grid(row=0, column=5)
+        self.leadSelection.grid(row=1, column=4)
 
-        regenerateButton = tk.Button(sectionParams, text='reg',
-                                     command=self.regenerateMeasures)
-        regenerateButton.grid(row=1, column=5)
+        genButton = tk.Label(sectionParams, text='Gen', width=3, bd=2, fg='white')
+        genButton.bind('<Button-1>', self.regenerateMeasures)
+        genButton.grid(row=0, column=3)
+        regenButton = tk.Label(sectionParams, text='Reg', width=3, bd=2, fg='white')
+        regenButton.bind('<Button-1>', self.regenerateAllMeasures)
+        regenButton.grid(row=0, column=4)
 
         self.trackFrame = tk.Frame(root)
         self.trackFrame.bind('<Configure>', self.onConfigure)
@@ -253,7 +258,8 @@ class InstrumentPanel():
             elif param == 'lead_num':
                 print(var)
                 self.leadVar.set(var)
-            var.set(self.selectedSection.params[param], call=False)
+            else:
+                var.set(self.selectedSection.params[param], call=False)
 
     def updateCanvas(self):
         ''' TODO: Make more efficient! '''
@@ -261,6 +267,9 @@ class InstrumentPanel():
         #print('canvas updated')
         x = 0
         cursorCoords = self.trackCanvas.coords(self.trackCursor)
+        if cursorCoords == []:
+            cursorCoords = [0, 0, 0, 80]
+
         self.trackCanvas.delete('all')
         self.sectionFrames = dict()
         height = 80
@@ -341,7 +350,7 @@ class InstrumentPanel():
         if self.trackCursor:
             self.trackCanvas.coords(self.trackCursor, (x, 0, x, 80))
         else:
-            self.trackCursor = self.trackCanvas.create_line(x, 0, x, 80, width=3, fill='orange')
+            self.trackCursor = self.trackCanvas.create_line((x, 0, x, 80), width=3, fill='orange')
 
     def onClick(self, event):
         x = self.trackCanvas.canvasx(event.x)
@@ -358,7 +367,7 @@ class InstrumentPanel():
 
         newParams = dict()
         for param, var in self.paramVars.items():
-            if param == 'name':
+            if param in ('name', 'chan'):
                 continue
             try:
                 val = int(var.get())
@@ -373,6 +382,11 @@ class InstrumentPanel():
     def regenerateMeasures(self, *args):
         if self.selectedSection and not self.selectedSection.blank:
             self.instrument.requestGenerateMeasures(self.selectedSection)
+        self.updateCanvas()
+
+    def regenerateAllMeasures(self, *args):
+        if self.selectedSection and not self.selectedSection.blank:
+            self.instrument.requestGenerateMeasures(self.selectedSection, gen_all=True)
         self.updateCanvas()
 
     def moveSectionLeft(self):
@@ -394,4 +408,10 @@ class InstrumentPanel():
         #controls = self.leadSelection.master
         #self.leadSelection = tk.OptionMenu(controls, self.leadVar, 'none', *leads)
         self.leadSelection.config(values=['none']+leads)
+
+    def setChannel(self):
+        newChan = self.paramVars['chan'].get()
+        print('[InstrumentPanel]', 'Changed channel to', newChan)
+        self.engine.changeChannel(self.instrument.id_, newChan)
+
 #EOF
