@@ -90,7 +90,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Section View ---------------------------------------------------
         section_view = SectionView(self.engine)
-        section_view.setFixedHeight(110)
+        section_view.setMinimumHeight(110)
 
         # Instrument Layout ----------------------------------------------
 
