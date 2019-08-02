@@ -28,6 +28,10 @@
 	border: 1px solid #5A5A5A;
 }
 
+QWidget {
+  font-size: 12px;
+}
+
 QWidget::item:selected {
 	background: #3D7848;
 }

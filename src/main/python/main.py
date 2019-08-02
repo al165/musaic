@@ -170,6 +170,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._instrument_layout.addLayout(global_controls, 0, 0)
 
         main_layout.addLayout(self._instrument_layout)
+        main_layout.setStretch(1, 2)
 
         main_layout.addWidget(section_view)
 
@@ -194,6 +195,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def addInstrument(self):
         instrument = self.engine.addInstrument()
         panel = InstrumentPanel(instrument, self.engine, self._track_view)
+        print('[MainWindow]', panel.sizeHint())
         panel.setFixedHeight(INS_PANEL_HEIGHT)
 
         self._instrument_scroll_layout.takeAt(len(self._instrument_panels))

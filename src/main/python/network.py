@@ -200,7 +200,7 @@ class NeuralNet():
         mode = kwargs.get('sample_mode', 'dist')
         chord_num = kwargs.get('chord_mode', 1)
 
-        print('[NeuralNet]', mode)
+        #print('[NeuralNet]', mode)
 
         if mode == 'argmax' or mode == 'best':
             sampledRhythm = np.argmax(output[0], axis=-1)
@@ -239,14 +239,13 @@ class NeuralNet():
                                                        replace=True, size=chord_num)))
             sampledMelody = np.array([m])
 
-        print(sampledRhythm, sampledMelody, sampledChords)
+        #print(sampledRhythm, sampledMelody, sampledChords)
         return sampledRhythm, sampledMelody, sampledChords
 
     def convertBarToContext(self, measure):
         '''
         Converts a list of notes (nn, start_tick, end_tick) to context
         format for network to use
-        TODO: handle chords
         '''
 
         if not measure or measure.isEmpty():
@@ -296,7 +295,7 @@ class NeuralNet():
     def convertContextToNotes(self, rhythmContext, melodyContext,
                               chordContexts, kwargs, octave=4):
 
-        print(rhythmContext.shape, melodyContext.shape)
+        #print(rhythmContext.shape, melodyContext.shape)
 
         def makeNote(pc, startTick, endTick):
             nn = 12*(octave+1) + pc - 1
