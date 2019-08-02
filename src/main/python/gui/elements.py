@@ -462,13 +462,18 @@ class SectionParameters(QtWidgets.QFrame):
         #sp.setHorizontalPolicy(QtWidgets.QSizePolicy.MinimumExpanding)
 
         parameter_layout = QtWidgets.QGridLayout()
+        parameter_layout.setSpacing(4)
+        parameter_layout.setContentsMargins(2, 2, 2, 2)
 
         self._section_name = QtWidgets.QLabel()
         self._section_name.setAutoFillBackground(True)
         parameter_layout.addWidget(self._section_name, 0, 0, 1, 6)
+        parameter_layout.setRowStretch(0, 0.5)
 
         action_box = QtWidgets.QGroupBox('Actions')
         action_layout = QtWidgets.QGridLayout()
+        action_layout.setSpacing(2)
+        action_layout.setContentsMargins(2, 2, 2, 2)
         action_box.setLayout(action_layout)
         parameter_layout.addWidget(action_box, 1, 0, 3, 1)
 
@@ -503,6 +508,8 @@ class SectionParameters(QtWidgets.QFrame):
         loop_box = QtWidgets.QGroupBox('Structure')
         parameter_layout.addWidget(loop_box, 1, 2, 3, 1)
         loop_layout = QtWidgets.QGridLayout()
+        loop_layout.setSpacing(2)
+        loop_layout.setContentsMargins(2, 2, 2, 2)
         loop_box.setLayout(loop_layout)
 
         self.parameters['length'].setRange(1, 64)
@@ -528,6 +535,8 @@ class SectionParameters(QtWidgets.QFrame):
 
         lead_box = QtWidgets.QGroupBox('Lead')
         lead_layout = QtWidgets.QHBoxLayout()
+        lead_layout.setSpacing(2)
+        lead_layout.setContentsMargins(2, 2, 2, 2)
         lead_box.setLayout(lead_layout)
         parameter_layout.addWidget(lead_box, 1, 3, 3, 1)
 
@@ -545,6 +554,8 @@ class SectionParameters(QtWidgets.QFrame):
 
         sample_box = QtWidgets.QGroupBox('Sample')
         sample_layout = QtWidgets.QHBoxLayout()
+        sample_layout.setSpacing(2)
+        sample_layout.setContentsMargins(2, 2, 2, 2)
         sample_box.setLayout(sample_layout)
         parameter_layout.addWidget(sample_box, 1, 4, 3, 1)
 
@@ -562,6 +573,8 @@ class SectionParameters(QtWidgets.QFrame):
 
         injection_box = QtWidgets.QGroupBox('Style')
         injection_layout = QtWidgets.QGridLayout()
+        injection_layout.setSpacing(2)
+        injection_layout.setContentsMargins(2, 2, 2, 2)
         injection_box.setLayout(injection_layout)
         parameter_layout.addWidget(injection_box, 1, 5, 3, 1)
 
@@ -762,6 +775,8 @@ class InstrumentPanel(QtWidgets.QFrame):
         self._selected_id = None
 
         control_layout = QtWidgets.QGridLayout()
+        control_layout.setSpacing(2)
+        control_layout.setContentsMargins(2, 2, 2, 2)
 
         self._instrument_name = self.instrument.name
         #self._instrument_color = QtGui.QColor('#aa0000')
