@@ -1,3 +1,4 @@
+import math
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import Qt
@@ -16,6 +17,9 @@ class BoxSlider(QtWidgets.QFrame):
             QtWidgets.QSizePolicy.MinimumExpanding,
             QtWidgets.QSizePolicy.MinimumExpanding
         )
+
+        self.setMinimumHeight(10)
+        self.setMinimumWidth(30)
 
         self._forground_color = QtGui.QColor('#5A5A5A')
         self._text_color = None
@@ -118,6 +122,9 @@ class BoxRangeSlider(QtWidgets.QFrame):
             QtWidgets.QSizePolicy.MinimumExpanding,
             QtWidgets.QSizePolicy.MinimumExpanding
         )
+
+        self.setMinimumHeight(10)
+        self.setMinimumWidth(30)
 
         self._forground_color = QtGui.QColor('#5A5A5A')
         self._text_color = None
@@ -229,11 +236,111 @@ class BoxRangeSlider(QtWidgets.QFrame):
         self._calculate_clicked_value(e)
 
 
+class Knob(QtWidgets.QWidget):
+    valueChanged = QtCore.pyqtSignal(float)
+
+    def __init__(self, minimum=0, maximum=10, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self._sensitivity = 200
+
+        self._emit = True
+
+        self._value = minimum
+        self.valueChanged.connect(self.repaint)
+
+        self._minimum = minimum
+        self._maximum = maximum
+
+        self.minimum = minimum
+        self.maximum = maximum
+        self.value = minimum
+
+        self._color = QtGui.QColor('#5A5A5A')
+
+
+    @property
+    def value(self):
+        return self._value
+
+    @value.setter
+    def value(self, new_val):
+        self._value = max(min(new_val, self.maximum), self.minimum)
+        if self._emit:
+            self.valueChanged.emit(self.value)
+
+    @property
+    def minimum(self):
+        return self._minimum
+
+    @minimum.setter
+    def minimum(self, new_min):
+        if self.value < new_min:
+            self.value = new_min
+        self._minimum = new_min
+
+    @property
+    def maximum(self):
+        return self._maximum
+
+    @maximum.setter
+    def maximum(self, new_max):
+        if self.value > new_max:
+            self.value = new_max
+        self._maximum = new_max
+
+    def setRange(self, new_min, new_max):
+        self.minimum = new_min
+        self.maximum = new_max
+
+    def paintEvent(self, e):
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        rect = painter.device().rect()
+
+        radius = min(rect.width(), rect.height())/2
+
+        pc = (self.value - self.minimum) / (self.maximum - self.minimum)
+
+        a = 4.18879 - pc*5.23599
+        x = math.cos(a) * (radius-1) + radius
+        y = -math.sin(a) * (radius-1) + radius
+
+        pen = QtGui.QPen()
+        pen.setWidth(2)
+        pen.setColor(self._color)
+        painter.setPen(pen)
+        painter.drawArc(1, 1, 2*radius-1, 2*radius-1, -120*16, -300*16)
+        pen.setColor(QtGui.QColor('#DDDDDD'))
+        painter.setPen(pen)
+        painter.drawLine(radius, radius, x, y)
+
+    def setSensitivity(self, s):
+        self._sensitivity = s
+
+    def mousePressEvent(self, e):
+        self._start_y = e.y()
+        self._start_value = self.value
+        self._emit = False
+
+    def mouseMoveEvent(self, e):
+        dy = self._start_y - e.y()
+        r = self.maximum - self.minimum
+
+        self.value = self._start_value + (dy*r)/self._sensitivity
+        self.update()
+
+    def mouseReleaseEvent(self, e):
+        self._emit = True
+        self.value = self.value
+
+
+
 if __name__ == '__main__':
     app = QtWidgets.QApplication([])
 
     window = QtWidgets.QMainWindow()
-    window.setGeometry(100, 100, 100, 80)
+    window.setGeometry(20, 40, 100, 80)
 
     main = QtWidgets.QWidget()
     layout = QtWidgets.QVBoxLayout()
@@ -242,14 +349,19 @@ if __name__ == '__main__':
 
     slider = BoxSlider()
     slider.setRange(0, 200)
-    layout.addWidget(slider)
+    #layout.addWidget(slider)
     slider.setValue(100)
 
     rangeSlider = BoxRangeSlider()
     rangeSlider.setRange(50, 150)
-    layout.addWidget(rangeSlider)
+    #layout.addWidget(rangeSlider)
     rangeSlider.setValue((75, 100))
     rangeSlider.left = 60
+
+    knob = Knob()
+    knob.setRange(0, 1)
+    knob.valueChanged.connect(print)
+    layout.addWidget(knob)
 
     window.show()
 

@@ -12,24 +12,16 @@ import pickle as pkl
 import numpy as np
 import numpy.random as rand
 
-from core import DEFAULT_SECTION_PARAMS
+from core import DEFAULT_SECTION_PARAMS, DEFAULT_META_DATA
 from v9.Nets.ChordNetwork import ChordNetwork
 from v9.Nets.MetaEmbedding import MetaEmbedding
 from v9.Nets.MetaPredictor import MetaPredictor
 from v9.Nets.CombinedNetwork import CombinedNetwork
 
-DEFAULT_META_DATA = {
-    'ts': '4/4',
-    'span': 10.0,
-    'jump': 1.5,
-    'cDens': 0.25,
-    'cDepth': 1.0,
-    'tCent': 62.0,
-    'rDens': 1.2,
-    'pos': 0.0,
-    'expression': 0
-}
+RANDOM = 0
+NEURAL = 1
 
+PLAYER = NEURAL
 
 class RandomPlayer():
     ''' For testing purpose only! '''
@@ -71,8 +63,8 @@ class NeuralNet():
         self.metaEmbedder = MetaEmbedding.from_saved_custom(trainingsDir + '/meta')
         metaPredictor = MetaPredictor.from_saved_custom(trainingsDir + '/meta')
 
-        weightsFolder = trainingsDir + 'weights'
-        #weightsFolder = trainingsDir + 'weights/_checkpoint_19'
+        #weightsFolder = trainingsDir + 'weights'
+        weightsFolder = trainingsDir + 'weights/_checkpoint_19'
 
         self.combinedNet = CombinedNetwork.from_saved_custom(weightsFolder, metaPredictor,
                                                              generation=True, compile_now=False)
@@ -111,7 +103,8 @@ class NeuralNet():
         '''
 
         print('[NeuralNet]', 'generateBar with params')
-        print(kwargs)
+        for k, v in kwargs.items():
+            print('  ', k, v)
 
         rhythmContexts, melodyContexts = self.getContexts(kwargs)
         embeddedMetaData = self.embedMetaData(kwargs['meta_data'])
@@ -373,8 +366,10 @@ class NetworkEngine(multiprocessing.Process):
 
     def run(self):
         if not self.network:
-            #self.network = NeuralNet(resources_path=self.resources_path)
-            self.network = RandomPlayer()
+            if PLAYER == NEURAL:
+                self.network = NeuralNet(resources_path=self.resources_path)
+            else:
+                self.network = RandomPlayer()
             #print('[NetworkEngine]', 'network loaded')
 
         while not self.stopRequest.is_set():

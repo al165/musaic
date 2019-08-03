@@ -1,3 +1,4 @@
+from copy import deepcopy
 from random import randint
 from collections import defaultdict
 
@@ -7,7 +8,8 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import Qt
 
 from app import Player, Engine
-from gui.sliders import BoxRangeSlider, BoxSlider
+from core import DEFAULT_META_DATA
+from gui.sliders import BoxRangeSlider, BoxSlider, Knob
 
 class TimeView(QtWidgets.QGraphicsView):
     def __init__(self, engine, *args, **kwargs):
@@ -469,29 +471,16 @@ class SectionParameters(QtWidgets.QFrame):
 
         self._section_name = QtWidgets.QLabel()
         self._section_name.setAutoFillBackground(True)
-        parameter_layout.addWidget(self._section_name, 0, 0, 1, 6)
+        parameter_layout.addWidget(self._section_name, 0, 0, 1, 7)
         parameter_layout.setRowStretch(0, 0.5)
 
-        #self.parameters = {
-        #    'length': QtWidgets.QSpinBox(),
-        #    'loop_num': QtWidgets.QSpinBox(),
-        #    'loop_alt_len': QtWidgets.QSpinBox(),
-        #    'loop_alt_num': QtWidgets.QSpinBox(),
-        #    'lead': QtWidgets.QComboBox(),
-        #    'lead_mode': QtWidgets.QComboBox(),
-        #    'sample_mode': QtWidgets.QComboBox(),
-        #    'context_mode': QtWidgets.QComboBox(),
-        #    'chord_mode': QtWidgets.QSpinBox(),
-        #    'transpose_octave': QtWidgets.QSpinBox(),
-        #    'note_length': BoxSlider(),
-        #    'velocity_range': BoxRangeSlider()
-        #}
         parameter_layout.addWidget(self.actionBox(), 1, 0, 3, 1)
         parameter_layout.addWidget(self.playbackBox(), 1, 1, 3, 1)
         parameter_layout.addWidget(self.structureBox(), 1, 2, 3, 1)
         parameter_layout.addWidget(self.leadBox(), 1, 3, 3, 1)
         parameter_layout.addWidget(self.sampleBox(), 1, 4, 3, 1)
         parameter_layout.addWidget(self.injectionBox(), 1, 5, 3, 1)
+        parameter_layout.addWidget(self.metaBox(), 1, 6, 3, 1)
 
         self.lead = self.parameters['lead']
         self.length = self.parameters['length']
@@ -691,6 +680,42 @@ class SectionParameters(QtWidgets.QFrame):
 
         return injection_box
 
+    def metaBox(self):
+        meta_box = QtWidgets.QGroupBox('Meta')
+        main_layout = QtWidgets.QVBoxLayout()
+        meta_layout = QtWidgets.QHBoxLayout()
+        main_layout.addLayout(meta_layout)
+        meta_layout.setSpacing(4)
+        meta_layout.setContentsMargins(4, 4, 4, 4)
+        meta_box.setLayout(main_layout)
+
+        self.meta_params = {
+            'span': Knob(1, 30),
+            'jump': Knob(0, 12),
+            'cDens': Knob(0, 1),
+            'cDepth': Knob(1, 5),
+            'tCent': Knob(40, 80),
+            'rDens': Knob(0, 8),
+            'pos': Knob(0, 1),
+        }
+
+        for k, v in self.meta_params.items():
+            meta_layout.addWidget(v)
+            v.setFixedHeight(30)
+            v.setFixedWidth(30)
+            v.valueChanged.connect(self.parameterChanged)
+
+        random_button = QtWidgets.QPushButton('random')
+        random_button.clicked.connect(self.randomMetaData)
+        main_layout.addWidget(random_button)
+
+        return meta_box
+
+    def randomMetaData(self):
+        for k, v in self.meta_params.items():
+            pc = randint(0, 100)/100
+            v.value = v.minimum + pc*(v.maximum - v.minimum)
+
     def setTrackView(self, track_view):
         self._track_view = track_view
 
@@ -745,15 +770,26 @@ class SectionParameters(QtWidgets.QFrame):
             self.parameters['lead_mode'].setVisible(False)
         self.lead.blockSignals(False)
 
-        injection_params = params['injection_params']
-        for k, v in self.injection_params.items():
-            if k == 'scale':
-                self.injection_params['scale'].setCurrentText(injection_params[1])
-            else:
-                if k in injection_params[0]:
-                    v.setChecked(True)
+        injection_params = params.get('injection_params', None)
+        if injection_params:
+            for k, v in self.injection_params.items():
+                if k == 'scale':
+                    self.injection_params['scale'].setCurrentText(injection_params[1])
                 else:
-                    v.setChecked(False)
+                    if k in injection_params[0]:
+                        v.setChecked(True)
+                    else:
+                        v.setChecked(False)
+
+        meta_data = params.get('meta_data', None)
+        if meta_data:
+            for k, v in meta_data.items():
+                if k in {'ts', 'expression'}:
+                    continue
+                self.meta_params[k].blockSignals(True)
+                self.meta_params[k].value = v
+                self.meta_params[k].blockSignals(False)
+                self.meta_params[k].update()
 
         self.setControlBounds()
 
@@ -814,6 +850,12 @@ class SectionParameters(QtWidgets.QFrame):
                     beats.append(k)
 
         params['injection_params'] = (tuple(beats), scale)
+
+        meta_data = deepcopy(DEFAULT_META_DATA)
+        for k, v in self.meta_params.items():
+            meta_data[k] = v.value
+
+        params['meta_data'] = meta_data
 
         self.setControlBounds()
 

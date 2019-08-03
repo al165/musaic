@@ -5,6 +5,18 @@ from copy import deepcopy
 from random import randint
 from collections import defaultdict
 
+DEFAULT_META_DATA = {
+    'ts': '4/4',
+    'span': 10.0,
+    'jump': 1.5,
+    'cDens': 0.25,
+    'cDepth': 1.0,
+    'tCent': 62.0,
+    'rDens': 1.2,
+    'pos': 0.0,
+    'expression': 0
+}
+
 DEFAULT_SECTION_PARAMS = {
     'lead': None,
     'length': 4,
