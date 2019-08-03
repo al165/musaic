@@ -2,6 +2,7 @@
 #pylint: disable=invalid-name,missing-docstring
 
 from copy import deepcopy
+from random import randint
 from collections import defaultdict
 
 DEFAULT_SECTION_PARAMS = {
@@ -19,6 +20,9 @@ DEFAULT_SECTION_PARAMS = {
     'prev_bars': None,
     'chord_mode': 0,
     'meta_data': None,
+    'velocity_range': (80, 100),
+    'note_length': 0,
+    'transpose_octave': 0,
 }
 
 def forceListLength(l, length, alt=None):
@@ -31,12 +35,16 @@ class Measure:
     '''
     Measure: Holds note values and associated times
     '''
-    def __init__(self, id_, chan=1, notes=None, events=None):
+    def __init__(self, id_, chan=1, notes=None, events=None,
+                 transpose_octave=0, note_length=None):
 
         self.id_ = id_
         self.chan = chan
+        self.transposeOctave = transpose_octave
+        self.noteLength = note_length
+        self.velocityRange = (80, 100)
 
-        self.callbacks = []
+        self.callbacks = set()
 
         if notes:
             # Note: (nn, start_tick, end_tick), where nn=0 is a pause
@@ -60,26 +68,47 @@ class Measure:
             func()
 
     def addCallback(self, func):
-        if func not in self.callbacks:
-            self.callbacks.append(func)
+        self.callbacks.add(func)
 
-    def convertNotesToMidiEvents(self):
+    def removeCallback(self, func):
+        if func in self.callbacks:
+            self.callbacks.remove(func)
+
+    def convertNotesToMidiEvents(self, notes):
         events = defaultdict(list)
-        for n in self.notes:
+        for n in notes:
             if n[0] > 0:
-                events[n[1]].append(('/noteOn', (self.chan, n[0], 100)))
-                events[n[2]].append(('/noteOff', (self.chan, n[0], 100)))
-        self.MidiEvents = dict(events)
+                vel = randint(*self.velocityRange)
+                events[n[1]].append(('/noteOn', (self.chan, n[0], vel)))
+                events[n[2]].append(('/noteOff', (self.chan, n[0], vel)))
+        return dict(events)
 
     def isEmpty(self):
         return self.empty
 
     def setNotes(self, notes):
         self.notes = notes
-        self.convertNotesToMidiEvents()
+        self.convertNotesToMidiEvents(self.notes)
         self.empty = False
         self.genRequestSent = False
         self.call()
+
+    def getNotes(self):
+        ''' Use this to access the actual played notes (includes transpose and length)'''
+        notes = []
+        for n in self.notes:
+            if n[0] > 0:
+                nn = n[0] + 12*self.transposeOctave
+                startTick = n[1]
+                if self.noteLength:
+                    endTick = startTick + self.noteLength
+                else:
+                    endTick = n[2]
+                notes.append((nn, startTick, endTick))
+        return notes
+
+    def getMidiEvents(self):
+        return self.convertNotesToMidiEvents(self.getNotes())
 
     def setMidiEvents(self, events):
         self.events = events
@@ -87,6 +116,20 @@ class Measure:
         self.empty = False
         self.genRequestSent = False
         self.call()
+
+    def setOctave(self, transpose_octave):
+        self.transposeOctave = transpose_octave
+        self.call()
+
+    def setNoteLength(self, length):
+        if length and length > 0:
+            self.noteLength = length
+        else:
+            self.noteLength = None
+        self.call()
+
+    def setVelocities(self, velocities):
+        self.velocityRange = velocities
 
     def setEmpty(self):
         self.notes = []
@@ -152,7 +195,6 @@ class Track:
         self.blocks[id_] = bar_num
         self.flattenMeasures()
 
-        print(self.track)
         return bar_num
 
     def deleteBlock(self, id_):
@@ -296,7 +338,7 @@ class Section:
         return m
 
     def changeParameter(self, **kwargs):
-        print('[Section]', 'changeParameter', kwargs)
+        #print('[Section]', 'changeParameter', kwargs)
         for key, val in kwargs.items():
             self.params[key] = val
             if key == 'lead' and val == -1:
@@ -320,6 +362,20 @@ class Section:
         for i in range(1, len(self.altEnds)):
             for _ in range(max(0, self.params['loop_alt_len'] - len(self.altEnds[i]))):
                 self.altEnds[i].append(self.newMeasure())
+
+        if 'transpose_octave' in kwargs:
+            #print('[Section]', 'updated section octave', kwargs['transpose_octave'])
+            for m in self.measures.values():
+                m.setOctave(kwargs['transpose_octave'])
+
+        if 'note_length' in kwargs:
+            #print('[Section]', 'updated note length', kwargs['note_length'])
+            for m in self.measures.values():
+                m.setNoteLength(kwargs['note_length'])
+
+        if 'velocity_range' in kwargs:
+            for m in self.measures.values():
+                m.setVelocities(kwargs['velocity_range'])
 
         self.flattenMeasures()
 
@@ -452,7 +508,7 @@ class Instrument:
         events = dict()
         for n, m in enumerate(self.track.flatMeasures):
             if m:
-                for t, e in m.MidiEvents.items():
+                for t, e in m.getMidiEvents().items():
                     if t >= 96:
                         addEvents(events, n+1, t-96, e)
                     else:
@@ -514,8 +570,6 @@ class Instrument:
 
     def deleteBlock(self, id_):
         self.track.deleteBlock(id_)
-
-
 
     def __len__(self):
         return len(self.track)

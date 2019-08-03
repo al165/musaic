@@ -7,7 +7,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import Qt
 
 from app import Player, Engine
-
+from gui.sliders import BoxRangeSlider, BoxSlider
 
 class TimeView(QtWidgets.QGraphicsView):
     def __init__(self, engine, *args, **kwargs):
@@ -171,7 +171,7 @@ class TrackView(QtWidgets.QWidget):
             try:
                 sb = self._section_boxes[instrumentID][block.id_]
             except KeyError:
-                print('[TrackView]', 'new section box')
+                #print('[TrackView]', 'new section box')
                 sb = SectionBox(block, instrument, self, start_time, height=self._instrument_panel_height)
                 self._track_scene.addItem(sb)
                 self._section_boxes[instrumentID][block.id_] = sb
@@ -389,7 +389,7 @@ class SectionBox(QtWidgets.QGraphicsItem):
                     painter.drawText(self._bar_width*i+5, 25, "O")
                     continue
 
-            for j, note in enumerate(measure.notes):
+            for j, note in enumerate(measure.getNotes()):
                 y = height - note[0] + 20
                 x1 = self._bar_width * (i + note[1]/96)
                 x2 = self._bar_width * (i + note[2]/96) - 1
@@ -461,6 +461,8 @@ class SectionParameters(QtWidgets.QFrame):
         sp.setHorizontalStretch(2)
         #sp.setHorizontalPolicy(QtWidgets.QSizePolicy.MinimumExpanding)
 
+        self.parameters = dict()
+
         parameter_layout = QtWidgets.QGridLayout()
         parameter_layout.setSpacing(4)
         parameter_layout.setContentsMargins(2, 2, 2, 2)
@@ -470,12 +472,51 @@ class SectionParameters(QtWidgets.QFrame):
         parameter_layout.addWidget(self._section_name, 0, 0, 1, 6)
         parameter_layout.setRowStretch(0, 0.5)
 
+        #self.parameters = {
+        #    'length': QtWidgets.QSpinBox(),
+        #    'loop_num': QtWidgets.QSpinBox(),
+        #    'loop_alt_len': QtWidgets.QSpinBox(),
+        #    'loop_alt_num': QtWidgets.QSpinBox(),
+        #    'lead': QtWidgets.QComboBox(),
+        #    'lead_mode': QtWidgets.QComboBox(),
+        #    'sample_mode': QtWidgets.QComboBox(),
+        #    'context_mode': QtWidgets.QComboBox(),
+        #    'chord_mode': QtWidgets.QSpinBox(),
+        #    'transpose_octave': QtWidgets.QSpinBox(),
+        #    'note_length': BoxSlider(),
+        #    'velocity_range': BoxRangeSlider()
+        #}
+        parameter_layout.addWidget(self.actionBox(), 1, 0, 3, 1)
+        parameter_layout.addWidget(self.playbackBox(), 1, 1, 3, 1)
+        parameter_layout.addWidget(self.structureBox(), 1, 2, 3, 1)
+        parameter_layout.addWidget(self.leadBox(), 1, 3, 3, 1)
+        parameter_layout.addWidget(self.sampleBox(), 1, 4, 3, 1)
+        parameter_layout.addWidget(self.injectionBox(), 1, 5, 3, 1)
+
+        self.lead = self.parameters['lead']
+        self.length = self.parameters['length']
+        self.loop_num = self.parameters['loop_num']
+        self.loop_alt_len = self.parameters['loop_alt_len']
+        self.loop_alt_num = self.parameters['loop_alt_num']
+
+        for p in self.parameters.values():
+            p.setSizePolicy(sp)
+            p.setMinimumWidth(60)
+            if isinstance(p, QtWidgets.QComboBox):
+                p.view().setMinimumWidth(p.minimumSizeHint().width())
+
+
+        parameter_layout.setColumnStretch(10, 2)
+        self.setLayout(parameter_layout)
+
+        self.parameterChanged()
+
+    def actionBox(self):
         action_box = QtWidgets.QGroupBox('Actions')
         action_layout = QtWidgets.QGridLayout()
         action_layout.setSpacing(2)
         action_layout.setContentsMargins(2, 2, 2, 2)
         action_box.setLayout(action_layout)
-        parameter_layout.addWidget(action_box, 1, 0, 3, 1)
 
         duplicate_section = QtWidgets.QPushButton('dup')
         duplicate_section.clicked.connect(self.duplicateSection)
@@ -493,91 +534,131 @@ class SectionParameters(QtWidgets.QFrame):
         regenerate.clicked.connect(lambda x: self.generateMeasures(gen_all=True))
         action_layout.addWidget(regenerate, 1, 1)
 
-        self.parameters = {
-            'length': QtWidgets.QSpinBox(),
-            'loop_num': QtWidgets.QSpinBox(),
-            'loop_alt_len': QtWidgets.QSpinBox(),
-            'loop_alt_num': QtWidgets.QSpinBox(),
-            'lead': QtWidgets.QComboBox(),
-            'lead_mode': QtWidgets.QComboBox(),
-            'sample_mode': QtWidgets.QComboBox(),
-            'context_mode': QtWidgets.QComboBox(),
-            'chord_mode': QtWidgets.QSpinBox()
-        }
+        return action_box
 
+    def playbackBox(self):
+
+        playback_box = QtWidgets.QGroupBox('Playback')
+        playback_layout = QtWidgets.QGridLayout()
+        playback_layout.setSpacing(2)
+        playback_layout.setContentsMargins(2, 2, 2, 2)
+        playback_box.setLayout(playback_layout)
+
+        self.parameters['transpose_octave'] = QtWidgets.QSpinBox()
+        self.parameters['transpose_octave'].setRange(-3, 3)
+        self.parameters['transpose_octave'].setValue(0)
+        self.parameters['transpose_octave'].setToolTip('Transpose by octave')
+        self.parameters['transpose_octave'].valueChanged.connect(self.parameterChanged)
+        playback_layout.addWidget(self.parameters['transpose_octave'], 0, 0)
+
+        self.parameters['note_length'] = BoxSlider()
+        self.parameters['note_length'].setRange(0, 96)
+        self.parameters['note_length'].setToolTip('Override the length of each note (0 sets to original lengths)')
+        self.parameters['note_length'].setMinimumWidth(100)
+        self.parameters['note_length'].setMinimumHeight(15)
+        self.parameters['note_length'].valueChanged.connect(self.parameterChanged)
+        playback_layout.addWidget(self.parameters['note_length'], 1, 0)
+
+        self.parameters['velocity_range'] = BoxRangeSlider()
+        self.parameters['velocity_range'].setRange(0, 127)
+        self.parameters['velocity_range'].left = 80
+        self.parameters['velocity_range'].right = 100
+        self.parameters['velocity_range'].setMinimumWidth(100)
+        self.parameters['velocity_range'].setMinimumHeight(15)
+        self.parameters['velocity_range'].setToolTip('Sets the range of possible velocity values')
+        self.parameters['velocity_range'].rangeChanged.connect(self.parameterChanged)
+        playback_layout.addWidget(self.parameters['velocity_range'], 2, 0)
+
+        return playback_box
+
+    def structureBox(self):
         loop_box = QtWidgets.QGroupBox('Structure')
-        parameter_layout.addWidget(loop_box, 1, 2, 3, 1)
         loop_layout = QtWidgets.QGridLayout()
         loop_layout.setSpacing(2)
         loop_layout.setContentsMargins(2, 2, 2, 2)
         loop_box.setLayout(loop_layout)
 
+        self.parameters['length'] = QtWidgets.QSpinBox()
         self.parameters['length'].setRange(1, 64)
         self.parameters['length'].setValue(4)
         self.parameters['length'].setToolTip("Length of the section")
         self.parameters['length'].valueChanged.connect(self.parameterChanged)
         loop_layout.addWidget(self.parameters['length'], 0, 0)
 
+        self.parameters['loop_num'] = QtWidgets.QSpinBox()
         self.parameters['loop_num'].setRange(1, 32)
         self.parameters['loop_num'].setToolTip("Number of times this section is played")
         self.parameters['loop_num'].valueChanged.connect(self.parameterChanged)
         loop_layout.addWidget(self.parameters['loop_num'], 0, 1)
 
+        self.parameters['loop_alt_len'] = QtWidgets.QSpinBox()
         self.parameters['loop_alt_len'].setRange(0, 4)
         self.parameters['loop_alt_len'].setToolTip("Length of alternate ending")
         self.parameters['loop_alt_len'].valueChanged.connect(self.parameterChanged)
         loop_layout.addWidget(self.parameters['loop_alt_len'], 1, 0)
 
+        self.parameters['loop_alt_num'] = QtWidgets.QSpinBox()
         self.parameters['loop_alt_num'].setRange(2, 8)
         self.parameters['loop_alt_num'].setToolTip("Number of alternate endings")
         self.parameters['loop_alt_num'].valueChanged.connect(self.parameterChanged)
         loop_layout.addWidget(self.parameters['loop_alt_num'], 1, 1)
 
+        return loop_box
+
+    def leadBox(self):
         lead_box = QtWidgets.QGroupBox('Lead')
-        lead_layout = QtWidgets.QHBoxLayout()
+        lead_layout = QtWidgets.QVBoxLayout()
         lead_layout.setSpacing(2)
         lead_layout.setContentsMargins(2, 2, 2, 2)
         lead_box.setLayout(lead_layout)
-        parameter_layout.addWidget(lead_box, 1, 3, 3, 1)
 
+        self.parameters['lead'] = QtWidgets.QComboBox()
         self.parameters['lead'].addItem("None")
         self.parameters['lead'].setToolTip("Lead instrument to follow")
         self.parameters['lead'].setFrame(False)
         self.parameters['lead'].currentIndexChanged.connect(self.parameterChanged)
         lead_layout.addWidget(self.parameters['lead'])
 
+        self.parameters['lead_mode'] = QtWidgets.QComboBox()
         self.parameters['lead_mode'].addItems(['both', 'melody'])
         self.parameters['lead_mode'].setVisible(False)
         self.parameters['lead_mode'].setToolTip("Take either 'melody' from lead instrument or 'both' melody and rhythm")
         self.parameters['lead_mode'].currentIndexChanged.connect(self.parameterChanged)
         lead_layout.addWidget(self.parameters['lead_mode'])
 
+        return lead_box
+
+    def sampleBox(self):
         sample_box = QtWidgets.QGroupBox('Sample')
-        sample_layout = QtWidgets.QHBoxLayout()
+        sample_layout = QtWidgets.QVBoxLayout()
         sample_layout.setSpacing(2)
         sample_layout.setContentsMargins(2, 2, 2, 2)
         sample_box.setLayout(sample_layout)
-        parameter_layout.addWidget(sample_box, 1, 4, 3, 1)
 
+        self.parameters['sample_mode'] = QtWidgets.QComboBox()
         self.parameters['sample_mode'].addItems(['best', 'top', 'dist'])
         self.parameters['sample_mode'].setToolTip("Either take the most likely ('best'), from the top 5 best ('top'), or draw from the full distribution of possible notes and rhythms ('dist')")
         self.parameters['sample_mode'].setCurrentText('dist')
         self.parameters['sample_mode'].currentIndexChanged.connect(self.parameterChanged)
         sample_layout.addWidget(self.parameters['sample_mode'])
 
+        self.parameters['chord_mode'] = QtWidgets.QSpinBox()
         self.parameters['chord_mode'].setRange(0, 4)
         self.parameters['chord_mode'].setSpecialValueText('auto')
         self.parameters['chord_mode'].setToolTip('Chord mode')
         self.parameters['chord_mode'].valueChanged.connect(self.parameterChanged)
         sample_layout.addWidget(self.parameters['chord_mode'])
 
+        return sample_box
+
+    def injectionBox(self):
         injection_box = QtWidgets.QGroupBox('Style')
         injection_layout = QtWidgets.QGridLayout()
         injection_layout.setSpacing(2)
         injection_layout.setContentsMargins(2, 2, 2, 2)
         injection_box.setLayout(injection_layout)
-        parameter_layout.addWidget(injection_box, 1, 5, 3, 1)
 
+        self.parameters['context_mode'] = QtWidgets.QComboBox()
         self.parameters['context_mode'].addItems(['real', 'inject'])
         self.parameters['context_mode'].setToolTip("Use the 'real' previous measures or 'inject' new measures")
         self.parameters['context_mode'].currentIndexChanged.connect(self.parameterChanged)
@@ -592,6 +673,10 @@ class SectionParameters(QtWidgets.QFrame):
             'tb': QtWidgets.QPushButton()
         }
 
+        sp = QtWidgets.QSizePolicy()
+        sp.setRetainSizeWhenHidden(True)
+        sp.setHorizontalStretch(2)
+
         self.injection_params['scale'].addItems(['maj', 'min', 'pen', '5th'])
         self.injection_params['scale'].setSizePolicy(sp)
         injection_layout.addWidget(self.injection_params['scale'], 0, 3, 1, 2)
@@ -604,24 +689,7 @@ class SectionParameters(QtWidgets.QFrame):
             button.clicked[bool].connect(self.parameterChanged)
             injection_layout.addWidget(button, 1, i)
 
-        self.lead = self.parameters['lead']
-        self.length = self.parameters['length']
-        self.loop_num = self.parameters['loop_num']
-        self.loop_alt_len = self.parameters['loop_alt_len']
-        self.loop_alt_num = self.parameters['loop_alt_num']
-
-        for p in self.parameters.values():
-            p.setSizePolicy(sp)
-            #p.setMinimumWidth(p.minimumSizeHint().width())
-            p.setMinimumWidth(60)
-            if isinstance(p, QtWidgets.QComboBox):
-                p.view().setMinimumWidth(p.minimumSizeHint().width())
-
-
-        parameter_layout.setColumnStretch(10, 2)
-        self.setLayout(parameter_layout)
-
-        self.parameterChanged()
+        return injection_box
 
     def setTrackView(self, track_view):
         self._track_view = track_view
@@ -728,6 +796,10 @@ class SectionParameters(QtWidgets.QFrame):
             elif k == 'lead':
                 params[k] = v.currentData()
                 #print(k, v.currentData())
+            elif k == 'note_length':
+                params[k] = v.value
+            elif k == 'velocity_range':
+                params[k] = (v.left, v.right)
             else:
                 params[k] = v.value()
                 #print(k, v.value())

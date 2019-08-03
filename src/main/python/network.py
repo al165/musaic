@@ -373,8 +373,8 @@ class NetworkEngine(multiprocessing.Process):
 
     def run(self):
         if not self.network:
-            self.network = NeuralNet(resources_path=self.resources_path)
-            #self.network = RandomPlayer()
+            #self.network = NeuralNet(resources_path=self.resources_path)
+            self.network = RandomPlayer()
             #print('[NetworkEngine]', 'network loaded')
 
         while not self.stopRequest.is_set():

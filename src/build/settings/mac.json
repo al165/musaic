@@ -1,3 +1,4 @@
 {
-    "mac_bundle_identifier": "com.arran.musaic"
+    "mac_bundle_identifier": "com.arran.musaic",
+    "hidden_imports": ["numpy.random.common", "numpy.random.bounded_integers", "numpy.random.entropy", "sip"]
 }

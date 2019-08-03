@@ -238,6 +238,7 @@ if __name__ == '__main__':
 
     window = MainWindow(ctx=appctxt)
     window.setMinimumHeight(500)
+    window.setGeometry(20, 40, 1200, 600)
     window.show()
 
     exit_code = appctxt.app.exec_()      # 2. Invoke appctxt.app.exec_()
