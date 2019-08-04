@@ -52,7 +52,7 @@ class ClientOptions(QtWidgets.QDialog):
 
 class MainWindow(QtWidgets.QMainWindow):
 
-    def __init__(self, ctx, *args, **kwargs):
+    def __init__(self, ctx, *args, argv=None, **kwargs):
         super(MainWindow, self).__init__(*args, **kwargs)
 
         self._ctx = ctx
@@ -62,7 +62,7 @@ class MainWindow(QtWidgets.QMainWindow):
         resources_path = self._ctx.get_resource()
         print(resources_path)
 
-        self.engine = Engine(resources_path=resources_path)
+        self.engine = Engine(resources_path=resources_path, argv=argv)
         self.engine.start()
 
         main = QtWidgets.QWidget()
@@ -236,7 +236,7 @@ if __name__ == '__main__':
     style = appctxt.get_resource('darkStyle.stylesheet')
     appctxt.app.setStyleSheet(open(style).read())
 
-    window = MainWindow(ctx=appctxt)
+    window = MainWindow(ctx=appctxt, argv=sys.argv)
     window.setMinimumHeight(500)
     window.setGeometry(20, 40, 1200, 600)
     window.show()

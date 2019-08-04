@@ -174,7 +174,7 @@ class Player(multiprocessing.Process):
 
 class Engine(threading.Thread):
 
-    def __init__(self, resources_path=None, guiHandle=None):
+    def __init__(self, resources_path=None, guiHandle=None, argv=None):
         super(Engine, self).__init__()
 
         self.guiHandle = guiHandle
@@ -363,7 +363,7 @@ class Engine(threading.Thread):
             for n, m in enumerate(instrument.track.flatMeasures):
                 if not m:
                     continue
-                for t, e in m.MidiEvents.items():
+                for t, e in m.getMidiEvents().items():
                     for msg in e:
                         events.append((n*96+t, msg))
 
