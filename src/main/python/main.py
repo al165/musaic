@@ -73,7 +73,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
         load = QtWidgets.QPushButton('open')
         load.clicked.connect(self.load)
+        load.setToolTip('Open an existing musAIc project')
         controls_layout.addWidget(load)
+
+        save = QtWidgets.QPushButton('save')
+        save.clicked.connect(self.save)
+        save.setToolTip('Save musAIc project')
+        controls_layout.addWidget(save)
 
         play = QtWidgets.QPushButton('play')
         play.clicked.connect(self.engine.startPlaying)
@@ -87,12 +93,9 @@ class MainWindow(QtWidgets.QMainWindow):
         send_options.clicked.connect(self.showOptions)
         controls_layout.addWidget(send_options)
 
-        save = QtWidgets.QPushButton('save')
-        save.clicked.connect(self.save)
-        controls_layout.addWidget(save)
-
-        export = QtWidgets.QPushButton('export MIDI')
+        export = QtWidgets.QPushButton('export midi')
         export.clicked.connect(self.exportMidi)
+        export.setToolTip('Export a MIDI file')
         controls_layout.addWidget(export)
 
         main_layout.addLayout(controls_layout)
@@ -159,14 +162,14 @@ class MainWindow(QtWidgets.QMainWindow):
         section_view.setTrackView(self._track_view)
 
         # global controls...
-        global_controls = QtWidgets.QHBoxLayout()
+        global_controls_layout = QtWidgets.QHBoxLayout()
         bpm = QtWidgets.QSpinBox()
         bpm.setFixedWidth(50)
         bpm.setRange(20, 300)
         bpm.valueChanged.connect(self.engine.setBPM)
         bpm.setValue(80)
         bpm.setToolTip('Beats per minute')
-        global_controls.addWidget(bpm)
+        global_controls_layout.addWidget(bpm)
 
         transpose = QtWidgets.QSpinBox()
         transpose.setFixedWidth(50)
@@ -174,9 +177,14 @@ class MainWindow(QtWidgets.QMainWindow):
         transpose.valueChanged.connect(self.engine.setGlobalTranspose)
         transpose.setValue(0)
         transpose.setToolTip('Global transpose (in semi-tones)')
-        global_controls.addWidget(transpose)
+        global_controls_layout.addWidget(transpose)
 
-        self._instrument_layout.addLayout(global_controls, 0, 0)
+        self.global_controls = {
+            'bpm': bpm,
+            'transpose': transpose
+        }
+
+        self._instrument_layout.addLayout(global_controls_layout, 0, 0)
 
         main_layout.addLayout(self._instrument_layout)
         main_layout.setStretch(1, 2)
@@ -255,9 +263,21 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # rebuild GUI...
         for instrument in self.engine.instruments:
-            print(instrument.id_, instrument.sections)
-            self.addInstrument(instrument=instrument, new_section=False)
+            print(instrument.id_, instrument.sections, instrument.chan)
+            panel = InstrumentPanel(instrument, self.engine, self._track_view)
+            panel.setFixedHeight(INS_PANEL_HEIGHT)
+
+            panel.setToolTip(f'{instrument.name}, {instrument.id_}, {instrument.chan}')
+            self._instrument_scroll_layout.takeAt(len(self._instrument_panels))
+            self._instrument_scroll_layout.addWidget(panel, alignment=Qt.AlignLeft)
+            self._instrument_scroll_layout.addStretch(1)
+            self._instrument_panels.append(panel)
+            self._track_view.addInstrument(instrument)
+            #self.addInstrument(instrument=instrument, new_section=False)
             self._track_view.buildSections(instrument.id_)
+
+        self.global_controls['bpm'].setValue(self.engine.bpm)
+        self.global_controls['transpose'].setValue(self.engine.global_transpose)
 
         self._track_view.update()
 

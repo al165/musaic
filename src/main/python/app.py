@@ -405,13 +405,14 @@ class Engine(threading.Thread):
 
         for insID, insData in data['instruments'].items():
             id_ = int(insID)
+            print(insData)
             instrument = Instrument(id_, insData['name'], insData['chan'], self)
             instrument.setData(insData)
             instrument.track.addCallback(lambda x: self.sendInstrumentEvents(id_))
             self.instruments.append(instrument)
-            self.changeChannel(id_, id_+1)
-            self.changeOctaveTranspose(id_)
-            self.changeMute(id_)
+            self.changeChannel(id_, insData['chan'])
+            self.changeOctaveTranspose(id_, insData['octave_transpose'])
+            self.changeMute(id_, insData['mute'])
 
         print('loaded')
 
