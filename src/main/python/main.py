@@ -262,7 +262,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.engine.loadFile(file_name[0])
 
         # rebuild GUI...
-        for instrument in self.engine.instruments:
+        for instrument in self.engine.instruments.values():
             print(instrument.id_, instrument.sections, instrument.chan)
             panel = InstrumentPanel(instrument, self.engine, self._track_view)
             panel.setFixedHeight(INS_PANEL_HEIGHT)

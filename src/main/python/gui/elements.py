@@ -765,7 +765,8 @@ class SectionParameters(QtWidgets.QFrame):
         self.lead.clear()
         self.lead.addItem('None', -1)
 
-        for ins in self._engine.instruments:
+        for ins in self._engine.instruments.values():
+            print(ins, self._instrument)
             if self._instrument.id_ != ins.id_:
                 self.lead.addItem(ins.name, ins.id_)
 

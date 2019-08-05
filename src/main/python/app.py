@@ -178,7 +178,7 @@ class Engine(threading.Thread):
 
         self.guiHandle = guiHandle
 
-        self.instruments = []
+        self.instruments = dict()
         self.instrumentOctave = dict()
         self.global_transpose = 0
         self.bpm = 80
@@ -255,7 +255,7 @@ class Engine(threading.Thread):
             msg['data'] = (id_, self.instruments[id_].compileMidiMessages())
             self.msgQueue.put(msg)
         else:
-            for instrument in self.instruments:
+            for instrument in self.instruments.values():
                 self.sendInstrumentEvents(instrument.id_)
 
     def changeChannel(self, insID, newChan):
@@ -324,10 +324,10 @@ class Engine(threading.Thread):
         return self.clockVar[0], self.clockVar[1]
 
     def addInstrument(self):
-        id_ = len(self.instruments)
+        id_ = len(self.instruments.keys())
         instrument = Instrument(id_, 'INS ' + str(id_), id_+1, self)
         instrument.track.addCallback(lambda x: self.sendInstrumentEvents(id_))
-        self.instruments.append(instrument)
+        self.instruments[id_] = instrument
         self.changeChannel(id_, id_+1)
         self.changeOctaveTranspose(id_)
         self.changeMute(id_)
@@ -369,7 +369,7 @@ class Engine(threading.Thread):
             'instruments': dict()
         }
 
-        for instrument in self.instruments:
+        for instrument in self.instruments.values():
             ins_data = instrument.getData()
             data['instruments'][ins_data['id']] = ins_data
 
@@ -396,7 +396,7 @@ class Engine(threading.Thread):
         while not self.msgQueue.empty():
             _ = self.msgQueue.get()
 
-        self.instruments = []
+        self.instruments = dict()
 
         # load data...
         self.instrumentOctave = dict()
@@ -409,7 +409,7 @@ class Engine(threading.Thread):
             instrument = Instrument(id_, insData['name'], insData['chan'], self)
             instrument.setData(insData)
             instrument.track.addCallback(lambda x: self.sendInstrumentEvents(id_))
-            self.instruments.append(instrument)
+            self.instruments[id_] = instrument
             self.changeChannel(id_, insData['chan'])
             self.changeOctaveTranspose(id_, insData['octave_transpose'])
             self.changeMute(id_, insData['mute'])
@@ -421,7 +421,7 @@ class Engine(threading.Thread):
         print('[Engine]', 'exporting MIDI file')
         mid = MidiFile(ticks_per_beat=24, type=1)
 
-        for instrument in self.instruments:
+        for instrument in self.instruments.values():
             track = MidiTrack()
 
             events = []
