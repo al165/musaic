@@ -11,6 +11,10 @@ from app import Player, Engine
 from core import DEFAULT_META_DATA
 from gui.sliders import BoxRangeSlider, BoxSlider, Knob
 
+
+DEFAULT_BAR_WIDTH = 80
+
+
 class TimeView(QtWidgets.QGraphicsView):
     def __init__(self, engine, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -114,7 +118,7 @@ class TrackView(QtWidgets.QWidget):
         layout.setSpacing(0)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        self._bar_width = 80
+        self._bar_width = DEFAULT_BAR_WIDTH
         self._track_scene = TrackScene(0.0, 0.0, 1000.0, 1000.0, self)
         self._track_scene.selectionChanged.connect(self.newSelection)
 
@@ -164,6 +168,7 @@ class TrackView(QtWidgets.QWidget):
     def buildSections(self, instrumentID):
         #print('[TrackView2]', 'drawSections', instrumentID)
 
+        print(self._instruments)
         instrument = self._instruments[instrumentID]
         track = instrument.track
 
@@ -262,6 +267,16 @@ class TrackView(QtWidgets.QWidget):
     def getTrackScene(self):
         return self._track_scene
 
+    def reset(self):
+        for section_boxes in self._section_boxes.values():
+            for sb in section_boxes.values():
+                sb.unhookSection()
+                self._track_scene.removeItem(sb)
+
+        self._instruments = dict()
+        self._section_boxes = defaultdict(dict)
+        self._bar_width = DEFAULT_BAR_WIDTH
+
     def __getattr__(self, name):
         if name in self.__dict__:
             return self[name]
@@ -308,9 +323,8 @@ class SectionBox(QtWidgets.QGraphicsItem):
 
         self._dragged = False
 
-    def sectionDeleted(self):
-        scene = self.scene()
-        scene.removeItem(self)
+    def unhookSection(self):
+        self.section.removeCallback(self.sectionChanged)
 
     def sectionChanged(self):
         self.update(self._rect)
@@ -408,12 +422,6 @@ class SectionBox(QtWidgets.QGraphicsItem):
     def boundingRect(self):
         return self._rect
 
-    def mousePressEvent(self, e):
-       # print('[SectionBox]', self.section.id_, e.pos())
-        #self.parent().setSelected(self.section.id_)
-        #self.update()
-        super().mousePressEvent(e)
-
     def mouseMoveEvent(self, e):
         #print('[SectionBox]', 'mouseMoveEvent', e)
         self._dragged = True
@@ -433,6 +441,7 @@ class SectionBox(QtWidgets.QGraphicsItem):
 
     def getSectionColor(self):
         return self._section_color
+
     def itemChange(self, constant, value):
         #print('[SectionBox]', 'itemChange()', constant, value)
         if constant == QtWidgets.QGraphicsItem.ItemPositionChange:
@@ -920,6 +929,7 @@ class InstrumentPanel(QtWidgets.QFrame):
 
         mute = QtWidgets.QPushButton('mute')
         mute.setCheckable(True)
+        mute.setChecked(self.instrument.mute)
         mute.setToolTip('Mute the instrument')
         mute.clicked[bool].connect(self.mute)
         control_layout.addWidget(mute, 3, 0)
@@ -927,7 +937,7 @@ class InstrumentPanel(QtWidgets.QFrame):
         octave = QtWidgets.QComboBox()
         octave.setToolTip('Transpose octave')
         octave.addItems(['+3', '+2', '+1', '--', '-1', '-2', '-3'])
-        octave.setCurrentIndex(3)
+        octave.setCurrentIndex(self.instrument.octave_transpose + 3)
         octave.currentTextChanged.connect(self.changeOctave)
         control_layout.addWidget(octave, 3, 1)
 

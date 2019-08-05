@@ -13,15 +13,11 @@ import numpy as np
 import numpy.random as rand
 
 from core import DEFAULT_SECTION_PARAMS, DEFAULT_META_DATA
-from v9.Nets.ChordNetwork import ChordNetwork
-from v9.Nets.MetaEmbedding import MetaEmbedding
-from v9.Nets.MetaPredictor import MetaPredictor
-from v9.Nets.CombinedNetwork import CombinedNetwork
 
 RANDOM = 0
 NEURAL = 1
 
-PLAYER = NEURAL
+PLAYER = RANDOM
 
 class RandomPlayer():
     ''' For testing purpose only! '''
@@ -337,7 +333,7 @@ class NeuralNet():
 
                     intervals = self.chordDict[chord]
                     for interval in intervals:
-                        notes.append(makeNote(pc+interval, tick, endTick))
+                        notes.append(makeNote(pc+interval-12, tick, endTick))
 
                 else:
                     notes.append(makeNote(pc, tick, endTick))
@@ -367,6 +363,11 @@ class NetworkEngine(multiprocessing.Process):
     def run(self):
         if not self.network:
             if PLAYER == NEURAL:
+                from v9.Nets.ChordNetwork import ChordNetwork
+                from v9.Nets.MetaEmbedding import MetaEmbedding
+                from v9.Nets.MetaPredictor import MetaPredictor
+                from v9.Nets.CombinedNetwork import CombinedNetwork
+
                 self.network = NeuralNet(resources_path=self.resources_path)
             else:
                 self.network = RandomPlayer()

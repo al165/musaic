@@ -70,6 +70,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Main Controls --------------------------------------------------
         controls_layout = QtWidgets.QHBoxLayout()
+
+        load = QtWidgets.QPushButton('open')
+        load.clicked.connect(self.load)
+        controls_layout.addWidget(load)
+
         play = QtWidgets.QPushButton('play')
         play.clicked.connect(self.engine.startPlaying)
         controls_layout.addWidget(play)
@@ -82,7 +87,11 @@ class MainWindow(QtWidgets.QMainWindow):
         send_options.clicked.connect(self.showOptions)
         controls_layout.addWidget(send_options)
 
-        export = QtWidgets.QPushButton('export')
+        save = QtWidgets.QPushButton('save')
+        save.clicked.connect(self.save)
+        controls_layout.addWidget(save)
+
+        export = QtWidgets.QPushButton('export MIDI')
         export.clicked.connect(self.exportMidi)
         controls_layout.addWidget(export)
 
@@ -192,10 +201,12 @@ class MainWindow(QtWidgets.QMainWindow):
         dialog = ClientOptions(self.engine)
         dialog.exec_()
 
-    def addInstrument(self):
-        instrument = self.engine.addInstrument()
+    def addInstrument(self, *args, instrument=None, new_section=True):
+        if not instrument:
+            instrument = self.engine.addInstrument()
+
+        print('MainWindow', 'addInstrument', instrument.id_)
         panel = InstrumentPanel(instrument, self.engine, self._track_view)
-        print('[MainWindow]', panel.sizeHint())
         panel.setFixedHeight(INS_PANEL_HEIGHT)
 
         self._instrument_scroll_layout.takeAt(len(self._instrument_panels))
@@ -204,7 +215,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._instrument_panels.append(panel)
         self._track_view.addInstrument(instrument)
 
-        panel.newSection()
+        if new_section:
+            panel.newSection()
 
     def deleteInstrument(self, instrumentID):
         pass
@@ -220,9 +232,46 @@ class MainWindow(QtWidgets.QMainWindow):
         finally:
             QtCore.QTimer.singleShot(1000/20, self.updateCursor)
 
+    def load(self):
+        print('[MainWindow]', 'Loading...')
+        file_name = QtWidgets.QFileDialog.getOpenFileName(self, 'Open project...',
+                                                          filter='musAIc (*.mus)')
+        print(file_name)
+
+        # first delete everything...
+        self._track_view.reset()
+        self._track_view.update()
+
+        while self._instrument_scroll_layout.count():
+            widget = self._instrument_scroll_layout.takeAt(0)
+            if widget and widget.widget():
+                widget.widget().setParent(None)
+
+        self._instrument_scroll_layout.addStretch(1)
+        self._instrument_panels = []
+
+        # load_file...
+        self.engine.loadFile(file_name[0])
+
+        # rebuild GUI...
+        for instrument in self.engine.instruments:
+            print(instrument.id_, instrument.sections)
+            self.addInstrument(instrument=instrument, new_section=False)
+            self._track_view.buildSections(instrument.id_)
+
+        self._track_view.update()
+
+        print('[MainWindow]', 'finished resetting GUI')
+
+    def save(self):
+        print('[MainWindow]', 'Saving...')
+        file_name = QtWidgets.QFileDialog.getSaveFileName(self, 'Save project...', filter='musAIc (*.mus)')
+        print(file_name)
+        self.engine.saveFile(file_name[0])
+
     def exportMidi(self):
         print('[MainWindow]', 'Exporting...')
-        file_name = QtWidgets.QFileDialog.getSaveFileName(self, 'Export MIDI...')
+        file_name = QtWidgets.QFileDialog.getSaveFileName(self, 'Export MIDI...', filter='MIDI (*.mid)')
         print(file_name)
         self.engine.exportMidiFile(file_name[0])
 

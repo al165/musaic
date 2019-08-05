@@ -61,7 +61,7 @@ class Measure:
         if notes:
             # Note: (nn, start_tick, end_tick), where nn=0 is a pause
             self.notes = notes
-            self.convertNotesToMidiEvents()
+            self.convertNotesToMidiEvents(self.notes)
             self.empty = False
         elif events:
             # {tick: MIDI Event} where MIDI Event = ('/eventType', (chan, nn, vel))
@@ -149,6 +149,15 @@ class Measure:
         self.empty = True
         self.call()
 
+    def getData(self):
+        data = {
+            'id': self.id_,
+            'empty': self.empty,
+            'notes': self.notes
+        }
+
+        return data
+
     def __getstate__(self):
         # in order to be picklable, must drop the callbacks...
         state = self.__dict__.copy()
@@ -170,7 +179,7 @@ class Track:
         self.blocks = defaultdict(list)
 
         self.flatMeasures = []
-        self.callbacks = []
+        self.callbacks = set()
 
     def call(self):
         ''' execute functions when self.track if updated '''
@@ -178,8 +187,11 @@ class Track:
             func(self.track)
 
     def addCallback(self, func):
-        if func not in self.callbacks:
-            self.callbacks.append(func)
+        self.callbacks.add(func)
+
+    def removeCallback(self, func):
+        if func in self.callbacks:
+            self.callbacks.remove(func)
 
     def setTrack(self, new_track):
         self.track = new_track
@@ -292,6 +304,35 @@ class Track:
                 return st
         return None
 
+    def getData(self):
+        data = {
+            'blocks': self.blocks,
+            'track': dict()
+        }
+
+        data['blocks'] = dict(self.blocks)
+
+        for barNum, block in self.track.items():
+            data['track'][barNum] = block.getData()
+
+        return data
+
+    def setData(self, trackData):
+        self.track = dict()
+        self.blocks = defaultdict(list)
+
+        for bID, v in trackData['blocks'].items():
+            self.blocks[bID] = v
+
+        for barNum, blockData in trackData['track'].items():
+            sections = [self.instrument.sections[sID] for sID in blockData['sections']]
+            for s in sections:
+                s.addCallback(self.flattenMeasures)
+            block = Block(int(blockData['id']), sections)
+            self.track[int(barNum)] = block
+
+        self.flattenMeasures()
+
     def __len__(self):
         return len(self.flatMeasures)
 
@@ -312,7 +353,7 @@ class Section:
         self.name = name
         self.id_ = id_
 
-        self.callbacks = []
+        self.callbacks = set()
 
         self.params = deepcopy(DEFAULT_SECTION_PARAMS)
         for k, v in kwargs.items():
@@ -334,8 +375,11 @@ class Section:
             func()
 
     def addCallback(self, func):
-        if func not in self.callbacks:
-            self.callbacks.append(func)
+        self.callbacks.add(func)
+
+    def removeCallback(self, func):
+        if func in self.callbacks:
+            self.callbacks.remove(func)
 
     def newMeasure(self, notes=None, events=None):
         id_ = self.measureCount
@@ -426,6 +470,74 @@ class Section:
     def mainLength(self):
         return self.params['length']
 
+    def getData(self):
+        data = {
+            'name': self.name,
+            'id': self.id_,
+            'params': self.params,
+            'main_measures': [],
+            'alt_ends': [],
+            'measures': dict(),
+            'blank': self.blank
+        }
+
+        for m in self.mainMeasures:
+            if m:
+                data['main_measures'].append(m.id_)
+            else:
+                data['main_measures'].append(None)
+
+        for altEnd in self.altEnds:
+            ae = []
+            for m in altEnd:
+                if m:
+                    ae.append(m.id_)
+                else:
+                    ae.append(None)
+
+            data['alt_ends'].append(ae)
+
+        for mID, measure in self.measures.items():
+            data['measures'][mID] = measure.getData()
+
+        return data
+
+    def setData(self, secData):
+        self.name = secData['name']
+        self.id_ = secData['id']
+        self.params = secData['params']
+        self.mainMeasures = []
+        self.altEnds = []
+        self.measures = dict()
+        self.blank = secData['blank']
+
+        for mID, mData in secData['measures'].items():
+            measure = Measure(mData['id'], notes=mData['notes'])
+            measure.addCallback(self.flattenMeasures)
+            self.measures[int(mID)] = measure
+
+        for mID in secData['main_measures']:
+            if mID == None:
+                self.mainMeasures.append(None)
+            else:
+                self.mainMeasures.append(self.measures[int(mID)])
+
+        for altEnd in secData['alt_ends']:
+            ae = []
+            for mID in altEnd:
+                if mID == None:
+                    ae.append(None)
+                else:
+                    ae.append(self.measures[mID])
+            self.altEnds.append(ae)
+
+        if len(self.measures.keys()) > 0:
+            self.measureCount = max(self.measures.keys()) + 1
+        else:
+            self.measureCount = 0
+
+        self.flattenMeasures()
+
     def __len__(self):
         return self.params['length'] * self.params['loop_num']
 
@@ -447,6 +559,7 @@ class Block:
         else:
             self.sections = [sections]
         self.flatMeasures = []
+        self.flattenMeasures()
 
     def addSection(self, section):
         self.sections.append(section)
@@ -457,6 +570,17 @@ class Block:
         for section in self.sections:
             self.flatMeasures.extend(section.flatMeasures)
         return self.flatMeasures
+
+    def getData(self):
+        data = {
+            'id': self.id_,
+            'sections': []
+        }
+
+        for section in self.sections:
+            data['sections'].append(section.id_)
+
+        return data
 
     def __len__(self):
         return sum(map(len, self.sections))
@@ -487,6 +611,9 @@ class Instrument:
         self.sectionCount = 0
 
         self.track = Track(self)
+
+        self.mute = False
+        self.octave_transpose = 0
 
     def measuresAt(self, n):
         if self.__len__() == 0:
@@ -583,8 +710,49 @@ class Instrument:
     def deleteBlock(self, id_):
         self.track.deleteBlock(id_)
 
+    def getData(self):
+        data = {
+            'id': self.id_,
+            'mute': self.mute,
+            'octave_transpose': self.octave_transpose,
+            'sections': dict(),
+            'name': self.name,
+            'chan': self.chan
+        }
+
+        for id_, section in self.sections.items():
+            data['sections'][id_] = section.getData()
+
+        data['track'] = self.track.getData()
+
+        return data
+
+    def setData(self, insData):
+        self.id_ = int(insData['id'])
+        self.name = insData['name']
+        self.chan = insData['chan']
+        self.mute = insData['mute']
+        self.octave_transpose = insData['octave_transpose']
+
+        self.sections = dict()
+
+        for secID, secData in insData['sections'].items():
+            section = Section(secData['name'], secData['id'],
+                              blank=secData['blank'], **secData['params'])
+            section.setData(secData)
+            self.sections[int(secID)] = section
+
+        if len(self.sections.keys()) > 0:
+            self.sectionCount = max(self.sections.keys()) + 1
+        else:
+            self.sectionCount = 0
+
+        self.track = Track(self)
+        self.track.setData(insData['track'])
+
     def __len__(self):
         return len(self.track)
 
     def __repr__(self):
-        return self.name + ': ' + repr(self.track)
+        return f'{self.id_}, {self.name}, {len(self)} sections, {self.sections.keys()} section IDs'
+        #return self.name + ': ' + repr(self.track)

@@ -2,6 +2,7 @@
 #pylint: disable=invalid-name,missing-docstring
 
 import time
+import json
 import threading
 import tkinter as tk
 import multiprocessing
@@ -102,7 +103,6 @@ class Player(multiprocessing.Process):
             else:
                 time.sleep(0.1)
 
-
     def join(self, timeout=None):
         self.stopRequest.set()
         self.allOff()
@@ -165,7 +165,6 @@ class Player(multiprocessing.Process):
         self.playing.clear()
         self.stopping = True
         self.clockVar[2] = 0
-        print('[Player]', 'setStop', self.stopping)
 
     def allOff(self):
         print('[Player]', 'allOff')
@@ -182,6 +181,7 @@ class Engine(threading.Thread):
         self.instruments = []
         self.instrumentOctave = dict()
         self.global_transpose = 0
+        self.bpm = 80
 
         self.msgQueue = multiprocessing.Queue()
         self.requests = []
@@ -265,6 +265,7 @@ class Engine(threading.Thread):
         self.msgQueue.put(msg)
 
     def changeMute(self, insID, mute=False):
+        self.instruments[insID].mute = mute
         msg = {'type': 'mute',
                'data': (insID, mute)}
         self.msgQueue.put(msg)
@@ -273,6 +274,7 @@ class Engine(threading.Thread):
         msg = {'type': 'octave',
                'data': (insID, octave)}
         self.instrumentOctave[insID] = octave
+        self.instruments[insID].octave_transpose = octave
         self.msgQueue.put(msg)
 
     def setGlobalTranspose(self, transpose=0):
@@ -286,6 +288,7 @@ class Engine(threading.Thread):
             bpm = 20
         elif bpm > 300:
             bpm = 300
+        self.bpm = bpm
 
         msg = {'type': 'bpm',
                'data': bpm}
@@ -328,6 +331,7 @@ class Engine(threading.Thread):
         self.changeChannel(id_, id_+1)
         self.changeOctaveTranspose(id_)
         self.changeMute(id_)
+
         return instrument
 
     def measuresAt(self, instrumentID, n):
@@ -350,6 +354,66 @@ class Engine(threading.Thread):
 
     def addPendingRequest(self, requestMsg):
         self.requests.append(requestMsg)
+
+    def saveFile(self, name='project.mus'):
+        if name[-4:] != '.mus':
+            name = name + '.mus'
+
+        print('[Engine]', 'saving project as', name, end='... ')
+
+        data = {
+            'global_settings': {
+                'bpm': self.bpm,
+                'global_transpose': self.global_transpose,
+            },
+            'instruments': dict()
+        }
+
+        for instrument in self.instruments:
+            ins_data = instrument.getData()
+            data['instruments'][ins_data['id']] = ins_data
+
+        with open(name, 'w') as f:
+            json.dump(data, f, indent=4)
+
+        print('Done')
+
+    def loadFile(self, name):
+        print('[Engine]', 'opening file', name, end='... ')
+
+        try:
+            with open(name, 'r') as f:
+                data = json.load(f)
+        except FileNotFoundError:
+            print('cannot be found, aborting')
+            return
+
+        # reset environment...
+        self.requests = []
+        self.stopPlaying()
+        self.setBarNumber(0)
+
+        while not self.msgQueue.empty():
+            _ = self.msgQueue.get()
+
+        self.instruments = []
+
+        # load data...
+        self.instrumentOctave = dict()
+        self.global_transpose = data['global_settings']['global_transpose']
+        self.bpm = data['global_settings']['bpm']
+
+        for insID, insData in data['instruments'].items():
+            id_ = int(insID)
+            instrument = Instrument(id_, insData['name'], insData['chan'], self)
+            instrument.setData(insData)
+            instrument.track.addCallback(lambda x: self.sendInstrumentEvents(id_))
+            self.instruments.append(instrument)
+            self.changeChannel(id_, id_+1)
+            self.changeOctaveTranspose(id_)
+            self.changeMute(id_)
+
+        print('loaded')
 
     def exportMidiFile(self, name='test.mid'):
         #allEvents = self.getAllEvents()
