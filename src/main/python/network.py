@@ -17,7 +17,13 @@ from core import DEFAULT_SECTION_PARAMS, DEFAULT_META_DATA
 RANDOM = 0
 NEURAL = 1
 
-PLAYER = RANDOM
+PLAYER = NEURAL
+
+if PLAYER == NEURAL:
+    from v9.Nets.ChordNetwork import ChordNetwork
+    from v9.Nets.MetaEmbedding import MetaEmbedding
+    from v9.Nets.MetaPredictor import MetaPredictor
+    from v9.Nets.CombinedNetwork import CombinedNetwork
 
 class RandomPlayer():
     ''' For testing purpose only! '''
@@ -363,11 +369,6 @@ class NetworkEngine(multiprocessing.Process):
     def run(self):
         if not self.network:
             if PLAYER == NEURAL:
-                from v9.Nets.ChordNetwork import ChordNetwork
-                from v9.Nets.MetaEmbedding import MetaEmbedding
-                from v9.Nets.MetaPredictor import MetaPredictor
-                from v9.Nets.CombinedNetwork import CombinedNetwork
-
                 self.network = NeuralNet(resources_path=self.resources_path)
             else:
                 self.network = RandomPlayer()
