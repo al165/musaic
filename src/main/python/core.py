@@ -304,6 +304,13 @@ class Track:
                 return st
         return None
 
+    def getLastSection(self):
+        try:
+            bar_num = max(self.track.keys())
+            return self.track[bar_num].sections[-1]
+        except (ValueError, KeyError, IndexError):
+            return None
+
     def getData(self):
         data = {
             'blocks': self.blocks,
@@ -623,7 +630,7 @@ class Instrument:
 
     def newSection(self, blank=False, **params):
         idx = self.sectionCount
-        section = Section(chr(65+idx)+str(self.id_), idx, blank=blank, chan=self.id_, **params)
+        section = Section(chr(65+idx)+str(self.id_), idx, **params)
         self.sections[idx] = section
         self.sectionCount += 1
         bar_num = self.track.appendSection(section)

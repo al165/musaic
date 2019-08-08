@@ -5,8 +5,12 @@ from PyQt5.QtCore import Qt
 from gui.elements import InstrumentPanel, TrackView, TimeView, SectionView
 from app import Player, Engine
 
+
+APP_NAME = "musAIc v1.0"
+
 INS_PANEL_HEIGHT = 100
 TIMELINE_HEIGHT = 20
+
 
 class ClientOptions(QtWidgets.QDialog):
 
@@ -57,7 +61,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._ctx = ctx
 
-        self.setWindowTitle("musAIc v1.0_dev (qt5)")
+        self.setWindowTitle(APP_NAME)
 
         resources_path = self._ctx.get_resource()
         print(resources_path)
