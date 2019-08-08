@@ -168,7 +168,6 @@ class TrackView(QtWidgets.QWidget):
     def buildSections(self, instrumentID):
         #print('[TrackView2]', 'drawSections', instrumentID)
 
-        print(self._instruments)
         instrument = self._instruments[instrumentID]
         track = instrument.track
 
@@ -946,7 +945,12 @@ class InstrumentPanel(QtWidgets.QFrame):
         self.setLayout(control_layout)
 
     def newSection(self):
-        bar_num, section = self.instrument.newSection()
+        # copy params from last bar
+        last_section = self.instrument.track.getLastSection()
+        if last_section:
+            _, _ = self.instrument.newSection(**last_section.params)
+        else:
+            _, _ = self.instrument.newSection()
 
     def generateAll(self, regen=False):
         self.instrument.requestGenerateMeasures(gen_all=regen)
