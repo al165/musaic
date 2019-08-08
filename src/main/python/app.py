@@ -4,7 +4,7 @@
 import time
 import json
 import threading
-import tkinter as tk
+#import tkinter as tk
 import multiprocessing
 
 from pythonosc import udp_client

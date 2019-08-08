@@ -1,3 +1,5 @@
+import multiprocessing
+
 from fbs_runtime.application_context.PyQt5 import ApplicationContext
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import Qt
@@ -298,6 +300,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
 if __name__ == '__main__':
+    multiprocessing.freeze_support()
+
     import sys
 
     appctxt = ApplicationContext()       # 1. Instantiate ApplicationContext

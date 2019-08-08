@@ -1,0 +1,5 @@
+keras
+tensorflow
+pyqt5==5.9.2
+mido
+python-osc
