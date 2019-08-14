@@ -5,6 +5,8 @@ from copy import deepcopy
 from random import randint
 from collections import defaultdict
 
+from mido.frozen import FrozenMessage
+
 DEFAULT_META_DATA = {
     'ts': '4/4',
     'span': 10.0,
@@ -61,7 +63,7 @@ class Measure:
         if notes:
             # Note: (nn, start_tick, end_tick), where nn=0 is a pause
             self.notes = notes
-            self.convertNotesToMidiEvents(self.notes)
+            self.MidiEvents = self.convertNotesToMidiEvents(notes)
             self.empty = False
         elif events:
             # {tick: MIDI Event} where MIDI Event = ('/eventType', (chan, nn, vel))
@@ -87,12 +89,17 @@ class Measure:
             self.callbacks.remove(func)
 
     def convertNotesToMidiEvents(self, notes):
+        ''' Returns dictionary {onTime: list of MIDI messages}. Messages do not contain time attribute.'''
         events = defaultdict(list)
         for n in notes:
             if n[0] > 0:
                 vel = randint(*self.velocityRange)
-                events[n[1]].append(('/noteOn', (self.chan, n[0], vel)))
-                events[n[2]].append(('/noteOff', (self.chan, n[0], vel)))
+                onMsg = FrozenMessage('note_on', channel=self.chan, note = n[0], velocity=vel)
+                offMsg = FrozenMessage('note_off', channel=self.chan, note = n[0], velocity=vel)
+
+                events[n[1]].append(onMsg)
+                events[n[2]].append(offMsg)
+
         return dict(events)
 
     def isEmpty(self):
@@ -120,11 +127,12 @@ class Measure:
         return notes
 
     def getMidiEvents(self):
+        ''' Applies note length and velocity changes '''
         return self.convertNotesToMidiEvents(self.getNotes())
 
     def setMidiEvents(self, events):
         self.events = events
-        # self.convertMidiEventsToNotes()
+        # TODO: self.convertMidiEventsToNotes()
         self.empty = False
         self.genRequestSent = False
         self.call()

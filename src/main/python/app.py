@@ -8,6 +8,7 @@ import threading
 import multiprocessing
 
 from pythonosc import udp_client
+import mido
 from mido import Message, MidiFile, MidiTrack, MetaMessage
 
 from core import Instrument, DEFAULT_SECTION_PARAMS
@@ -17,12 +18,14 @@ from network import NetworkEngine
 APP_NAME = "musAIc (v0.9.0.)"
 
 CLIENT_ADDR = '127.0.0.1'
-#CLIENT_ADDR = '192.168.56.102'
-#CLIENT_ADDR = '100.75.0.230'
 CLIENT_PORT = 57120
 
 STOPPED = 0
 PLAYING = 1
+
+
+def convertMidiToOsc(msg):
+    return (msg.type, (msg.channel, msg.note, msg.velocity))
 
 
 class Player(multiprocessing.Process):
@@ -49,6 +52,10 @@ class Player(multiprocessing.Process):
         self.playing = multiprocessing.Event()
         self.stopping = False
 
+        self.osc = True
+        self.midi = False
+        self.port = None
+
     def run(self):
         while not self.stopRequest.is_set():
 
@@ -61,8 +68,12 @@ class Player(multiprocessing.Process):
                 # BPM=80
                 tickTime = (60/self.bpm)/24
 
+                # measures = (instrumentID, {tick: [midiMessages]})
+                # for each instrument at current bar number
                 measures = [(id_, m.get(self.clockVar[0], dict()))
-                            for id_, m in self.instrumentMessages.items()]
+                            for id_, m in self.instrumentMessages.items() if not
+                            self.instrumentMute[id_]]
+
                 clockOn = time.time()
 
                 # --- During measure
@@ -70,15 +81,13 @@ class Player(multiprocessing.Process):
                     if self.sendClock:
                         self.client.send_message('/clock', tick)
                     self.clockVar[1] = tick
+
                     for measure in measures:
-                        for event in measure[1].get(tick, []):
-                            addr, (_, nn, vel) = event
-                            if not self.instrumentMute[measure[0]]:
-                                nn += (12*self.instrumentOctave[measure[0]])
-                                nn += self.globalTranspose
-                                args = (self.instrumentChannels[measure[0]], nn, vel)
-                                print(addr, args)
-                                self.client.send_message(addr, args)
+                        id_ = measure[0]
+                        for msg in measure[1].get(tick, []):
+                            nn = msg.note + (12*self.instrumentOctave[measure[0]]) + self.globalTranspose
+                            print(nn, msg)
+                            self.sendOut(msg.copy(note=nn))
 
                     if self.stopRequest.is_set():
                         return
@@ -106,7 +115,17 @@ class Player(multiprocessing.Process):
     def join(self, timeout=None):
         self.stopRequest.set()
         self.allOff()
+        if self.port:
+            self.port.reset()
+            self.port.close()
         super(Player, self).join(timeout)
+
+    def sendOut(self, msg):
+        if self.client and self.osc:
+            self.client.send_message(*convertMidiToOsc(msg))
+
+        if self.midi and self.port:
+            self.port.send(msg)
 
     def checkMessages(self):
         try:
@@ -145,6 +164,16 @@ class Player(multiprocessing.Process):
                     port = data[1]
                     self.client = udp_client.SimpleUDPClient(addr, port)
                     self.sendClock = data[2]
+                elif mType == 'midi_port_setting':
+                    print('[Player]', 'midi options set:', data)
+                    if self.port:
+                        self.port.reset()
+                        self.port.close()
+                    self.port = mido.open_output(data[0])
+                elif mType == 'midi_out':
+                    self.midi = data[0]
+                elif mType == 'osc_out':
+                    self.osc = data[0]
                 else:
                     print('[Player]', 'Unknown message type:', msg)
 
@@ -167,8 +196,11 @@ class Player(multiprocessing.Process):
         self.clockVar[2] = 0
 
     def allOff(self):
-        print('[Player]', 'allOff')
-        self.client.send_message('/panic', 0)
+        #print('[Player]', 'allOff')
+        if self.client and self.osc:
+            self.client.send_message('/panic', 0)
+        if self.port:
+            self.port.reset()
 
 
 class Engine(threading.Thread):
@@ -188,14 +220,22 @@ class Engine(threading.Thread):
         self.netRequestQueue = multiprocessing.Queue()
         self.netReturnQueue = multiprocessing.Queue()
 
-        self.clientOptions = {
+        self.oscOptions = {
             'addr': CLIENT_ADDR,
             'port': CLIENT_PORT,
-            'clock': True
+            'clock': True,
+            'send': True
+        }
+
+        self.midiOptions = {
+            'port': None,
+            'clock': True,
+            'send': False
         }
 
         self.setClientOptions(CLIENT_ADDR, CLIENT_PORT, True)
 
+        # clock var [bar_num, tick, status]
         self.clockVar = multiprocessing.Array('i', [0, 0, 0])
         self.player = Player(self.msgQueue, self.clockVar)
 
@@ -205,6 +245,8 @@ class Engine(threading.Thread):
 
         self.status = STOPPED
         self.stopRequest = multiprocessing.Event()
+
+        mido.set_backend('mido.backends.pygame')
 
         self.player.start()
         self.networkEngine.start()
@@ -295,11 +337,30 @@ class Engine(threading.Thread):
         self.msgQueue.put(msg)
 
     def setClientOptions(self, addr, port, clock):
-        self.clientOptions['addr'] = addr
-        self.clientOptions['port'] = port
-        self.clientOptions['clock'] = clock
+        self.oscOptions['addr'] = addr
+        self.oscOptions['port'] = port
+        self.oscOptions['clock'] = clock
         msg = {'type': 'client_options',
                'data': (addr, port, clock)}
+        self.msgQueue.put(msg)
+
+    def setOscOut(self, out):
+        self.oscOptions['send'] = out
+        msg = {'type': 'osc_out',
+               'data': (out,)}
+        self.msgQueue.put(msg)
+
+    def setMidiPort(self, port_name, clock=True):
+        self.midiOptions['port'] = port_name
+        self.midiOptions['clock'] = clock
+        msg = {'type': 'midi_port_setting',
+               'data': (port_name, clock)}
+        self.msgQueue.put(msg)
+
+    def setMidiOut(self, out):
+        self.midiOptions['send'] = out
+        msg = {'type': 'midi_out',
+               'data': (out,)}
         self.msgQueue.put(msg)
 
     def startPlaying(self):
@@ -322,6 +383,9 @@ class Engine(threading.Thread):
 
     def getTime(self):
         return self.clockVar[0], self.clockVar[1]
+
+    def getMidiPorts(self):
+        return mido.get_output_names()
 
     def addInstrument(self):
         id_ = len(self.instruments.keys())
@@ -417,8 +481,8 @@ class Engine(threading.Thread):
         print('loaded')
 
     def exportMidiFile(self, name='test.mid'):
-        #allEvents = self.getAllEvents()
         print('[Engine]', 'exporting MIDI file')
+
         mid = MidiFile(ticks_per_beat=24, type=1)
 
         for instrument in self.instruments.values():
@@ -437,24 +501,22 @@ class Engine(threading.Thread):
 
             track.append(MetaMessage('track_name', name=instrument.name))
             for i, e in enumerate(events):
-                msgType = {'/noteOn': 'note_on',
-                           '/noteOff': 'note_off'}[e[1][0]]
-                args = e[1][1]
+                msg = e[1]
+
                 if i > 0:
                     t = e[0] - events[i-1][0]
                 else:
                     t = e[0]
 
-                print(msgType, args, t)
-                nn = args[1] + 12*self.instrumentOctave[instrument.id_] + self.global_transpose
-                msg = Message(msgType, channel=instrument.chan,
-                              note=nn, velocity=args[2], time=t)
-                track.append(msg)
+                print(msg, t)
+                nn = msg.note + 12*self.instrumentOctave[instrument.id_] + self.global_transpose
+                track.append(msg.copy(time=t, note=nn))
 
             track.append(MetaMessage('end_of_track'))
             mid.tracks.append(track)
 
         mid.save(name)
+
         print('[Engine]', 'done')
 
 

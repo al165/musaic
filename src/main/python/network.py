@@ -17,7 +17,7 @@ from core import DEFAULT_SECTION_PARAMS, DEFAULT_META_DATA
 RANDOM = 0
 NEURAL = 1
 
-PLAYER = NEURAL
+PLAYER = RANDOM
 
 if PLAYER == NEURAL:
     from v9.Nets.ChordNetwork import ChordNetwork

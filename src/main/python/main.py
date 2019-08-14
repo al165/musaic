@@ -26,21 +26,47 @@ class ClientOptions(QtWidgets.QDialog):
         self.setWindowTitle('musAIc options...')
 
         layout = QtWidgets.QVBoxLayout()
-        form_layout = QtWidgets.QFormLayout()
-        layout.addLayout(form_layout)
 
-        self._addr = QtWidgets.QLineEdit(str(self._engine.clientOptions['addr']))
+        self._osc_box = QtWidgets.QGroupBox('OSC')
+        osc_layout = QtWidgets.QFormLayout()
+        self._osc_box.setLayout(osc_layout)
+        self._osc_box.setCheckable(True)
+        self._osc_box.setChecked(self._engine.oscOptions['send'])
+
+        self._addr = QtWidgets.QLineEdit(str(self._engine.oscOptions['addr']))
         self._addr.setInputMask('000.000.000.000')
         self._port = QtWidgets.QSpinBox()# str(self._engine.clientOptions['port']))
         self._port.setRange(1024, 65535)
-        self._port.setValue(self._engine.clientOptions['port'])
-        self._clock = QtWidgets.QCheckBox()
-        self._clock.setChecked(self._engine.clientOptions['clock'])
+        self._port.setValue(self._engine.oscOptions['port'])
+        self._osc_clock = QtWidgets.QCheckBox()
+        self._osc_clock.setChecked(self._engine.oscOptions['clock'])
 
-        form_layout.addRow('Address:', self._addr)
-        form_layout.addRow('Port:', self._port)
-        form_layout.addRow('Send clock:', self._clock)
+        osc_layout.addRow('Address:', self._addr)
+        osc_layout.addRow('Port:', self._port)
+        osc_layout.addRow('Send clock:', self._osc_clock)
 
+        layout.addWidget(self._osc_box)
+
+        self._midi_box = QtWidgets.QGroupBox('MIDI')
+        midi_layout = QtWidgets.QFormLayout()
+        self._midi_box.setLayout(midi_layout)
+        self._midi_box.setCheckable(True)
+        self._midi_box.setChecked(self._engine.midiOptions['send'])
+
+        self._midi_port = QtWidgets.QComboBox()
+        port_names = self._engine.getMidiPorts()
+        if port_names:
+            self._midi_port.addItems(port_names)
+        else:
+            self._midi_port.addItem('No MIDI devices found...')
+
+        self._midi_clock = QtWidgets.QCheckBox()
+        self._midi_clock.setChecked(self._engine.midiOptions['clock'])
+
+        midi_layout.addRow("MIDI Port:", self._midi_port)
+        midi_layout.addRow("Send clock:", self._midi_clock)
+
+        layout.addWidget(self._midi_box)
 
         buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
         layout.addWidget(buttons)
@@ -51,7 +77,18 @@ class ClientOptions(QtWidgets.QDialog):
         self.setLayout(layout)
 
     def accept(self):
-        self._engine.setClientOptions(self._addr.text(), int(self._port.value()), self._clock.isChecked())
+        self._engine.setOscOut(self._osc_box.isChecked())
+        if self._osc_box.isChecked():
+            self._engine.setClientOptions(self._addr.text(), int(self._port.value()),
+                                          self._osc_clock.isChecked())
+
+        self._engine.setMidiOut(self._midi_box.isChecked())
+        if self._midi_box.isChecked():
+            port_name = self._midi_port.currentText()
+            if port_name == 'No MIDI devices found...':
+                port_name = None
+            self._engine.setMidiPort(port_name, self._midi_clock.isChecked())
+
         super().accept()
         return
 
