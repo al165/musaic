@@ -44,7 +44,8 @@ class Player(multiprocessing.Process):
         self.instrumentMute = dict()
 
         self.client = udp_client.SimpleUDPClient(CLIENT_ADDR, CLIENT_PORT)
-        self.sendClock = True
+        self.sendOscClock = True
+        self.sendMidiClock = True
         self.bpm = 80
         self.globalTranspose = 0
 
@@ -55,6 +56,8 @@ class Player(multiprocessing.Process):
         self.osc = True
         self.midi = False
         self.port = None
+
+        mido.set_backend('mido.backends.pygame')
 
     def run(self):
         while not self.stopRequest.is_set():
@@ -78,7 +81,7 @@ class Player(multiprocessing.Process):
 
                 # --- During measure
                 for tick in range(24 * 4):
-                    if self.sendClock:
+                    if self.sendOscClock and self.osc:
                         self.client.send_message('/clock', tick)
                     self.clockVar[1] = tick
 
@@ -163,7 +166,7 @@ class Player(multiprocessing.Process):
                     addr = data[0]
                     port = data[1]
                     self.client = udp_client.SimpleUDPClient(addr, port)
-                    self.sendClock = data[2]
+                    self.sendOscClock = data[2]
                 elif mType == 'midi_port_setting':
                     print('[Player]', 'midi options set:', data)
                     if self.port:
@@ -520,70 +523,5 @@ class Engine(threading.Thread):
         print('[Engine]', 'done')
 
 
-#class MusaicApp:
-#
-#    def __init__(self):
-#        self.root = tk.Tk()
-#        self.root.title(APP_NAME)
-#        self.root.geometry('1500x500+10+50')
-#        self.root.resizable(0, 0)
-#        self.mainframe = tk.Frame(self.root)
-#        self.mainframe.pack(fill='both', expand=True)
-#
-#        self.engine = Engine(guiHandle=self)
-#
-#        self.addInsButton = tk.Button(self.mainframe, text='+', command=self.addInstrument,
-#                                      width=40)
-#        self.addInsButton.grid(row=2, column=0, sticky='ew')
-#
-#        self.instrumentPanels = []
-#        self.timeLine = TimeLine(self.mainframe, self.instrumentPanels, self.engine)
-#
-#        mainControls = tk.Frame(self.mainframe)
-#        playButton = tk.Button(mainControls, text='play', command=self.engine.startPlaying)
-#        playButton.grid(row=0, column=0)
-#        stopButton = tk.Button(mainControls, text='stop', command=self.engine.stopPlaying)
-#        stopButton.grid(row=0, column=1)
-#        saveButton = tk.Button(mainControls, text='export', command=self.engine.exportMidiFile)
-#        saveButton.grid(row=0, column=2)
-#        mainControls.grid(row=0, column=0)
-#
-#        self.guiLoop()
-#        self.engine.start()
-#        self.addInstrument()
-#
-#        self.root.mainloop()
-#
-#        print('Closing musaAIc', end='')
-#        self.engine.join(timeout=1)
-#        print()
-#
-#    def addInstrument(self):
-#        instrument = self.engine.addInstrument()
-#        panel = InstrumentPanel(self.mainframe, instrument, self.engine, self.timeLine)
-#        panel.newSection()
-#        self.instrumentPanels.append(panel)
-#        for i, insPanel in enumerate(self.instrumentPanels):
-#            insPanel.updateLeadOptions([j for j in range(len(self.instrumentPanels)) if j != i])
-#        self.addInsButton.grid(row=len(self.instrumentPanels)+2)
-#
-#    def guiLoop(self):
-#        barNum, tick = self.engine.getTime()
-#        self.timeLine.updateCursor(barNum, tick)
-#        for ip in self.instrumentPanels:
-#            ip.updateCursor(barNum, tick)
-#
-#        self.root.after(1000//20, self.guiLoop)
-#
-#    def requestRedraw(self, insID=None):
-#        if insID:
-#            self.instrumentPanels[insID].updateCanvas()
-#        else:
-#            for instrumentPanel in self.instrumentPanels:
-#                instrumentPanel.updateCanvas()
-#
-#
-#if __name__ == '__main__':
-#    app = MusaicApp()
 
 # EOF

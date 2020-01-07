@@ -8,7 +8,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import Qt
 
 from app import Player, Engine
-from core import DEFAULT_META_DATA
+from core import DEFAULT_META_DATA, DEFAULT_SECTION_PARAMS, DEFAULT_AI_PARAMS
 from gui.sliders import BoxRangeSlider, BoxSlider, Knob
 
 
@@ -362,7 +362,7 @@ class SectionBox(QtWidgets.QGraphicsItem):
         pen.setCapStyle(Qt.FlatCap)
         pen.setWidth(1)
         painter.setPen(pen)
-        if not self.section.blank and len(self.section.name)*5 < len(self.section)*self._bar_width :
+        if len(self.section.name)*5 < len(self.section)*self._bar_width :
             painter.drawText(10, 13, self.section.name)
 
         # draw bar lines...
@@ -389,10 +389,6 @@ class SectionBox(QtWidgets.QGraphicsItem):
         lines = []
 
         for i, measure in enumerate(self.section.flatMeasures):
-            if self.section.blank:
-                continue
-
-            #painter.drawText(self._bar_width*(i+1)-15, 25, str(measure.id_))
 
             if self._bar_width > 10:
                 if not measure or (measure.isEmpty() and not measure.genRequestSent):
@@ -871,8 +867,7 @@ class SectionParameters(QtWidgets.QFrame):
         self._section.changeParameter(**params)
 
     def generateMeasures(self, gen_all=False):
-        if not self._section.blank:
-            self._instrument.requestGenerateMeasures(self._section.id_, gen_all=gen_all)
+        self._instrument.requestGenerateMeasures(self._section.id_, gen_all=gen_all)
 
     def duplicateSection(self):
         bar_num, section = self._instrument.duplicateSection(self._section.id_)
@@ -948,9 +943,12 @@ class InstrumentPanel(QtWidgets.QFrame):
         # copy params from last bar
         last_section = self.instrument.track.getLastSection()
         if last_section:
-            _, _ = self.instrument.newSection(**last_section.params)
+            _, _ = self.instrument.newSection(sectionType='ai', **last_section.params)
         else:
-            _, _ = self.instrument.newSection()
+            _, _ = self.instrument.newSection(sectionType='ai', length=4)
+
+    def importMidi(self):
+        pass
 
     def generateAll(self, regen=False):
         self.instrument.requestGenerateMeasures(gen_all=regen)

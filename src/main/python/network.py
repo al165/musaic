@@ -12,12 +12,12 @@ import pickle as pkl
 import numpy as np
 import numpy.random as rand
 
-from core import DEFAULT_SECTION_PARAMS, DEFAULT_META_DATA
+from core import DEFAULT_SECTION_PARAMS, DEFAULT_AI_PARAMS, DEFAULT_META_DATA
 
 RANDOM = 0
 NEURAL = 1
 
-PLAYER = RANDOM
+PLAYER = NEURAL
 
 if PLAYER == NEURAL:
     from v9.Nets.ChordNetwork import ChordNetwork
@@ -87,7 +87,7 @@ class NeuralNet():
                                                        load_melody_encoder=True)
 
         # predict some junk data to fully initilise model...
-        self.generateBar(**DEFAULT_SECTION_PARAMS)
+        self.generateBar(**DEFAULT_SECTION_PARAMS, **DEFAULT_AI_PARAMS)
 
         print('\n[NeuralNet]', 'Neural network loaded in', int(time.time() - startTime), 'seconds\n')
 
@@ -143,7 +143,7 @@ class NeuralNet():
     def getContexts(self, kwargs):
         mode = kwargs.get('context_mode', None)
         injection_params = kwargs.get('injection_params',
-                                      DEFAULT_SECTION_PARAMS['injection_params'])
+                                      DEFAULT_AI_PARAMS['injection_params'])
         prev_bars = kwargs.get('prev_bars')
 
         if mode == 'inject':
@@ -166,7 +166,11 @@ class NeuralNet():
                 'pen': [1, 4, 6, 8, 11],
                 '5th': [1, 8]
             }[injection_params[1]]
+            #if len(injection_params) > 2 and injection_params[2]:
+            melodyPool.extend([x+12 for x in melodyPool])
+
             melodyContexts = np.random.choice(melodyPool, size=(1, 4, 48))
+
         else:
             rhythmContexts = np.zeros((4, 1, 4))
             melodyContexts = np.zeros((1, 4, 48))
@@ -175,7 +179,7 @@ class NeuralNet():
                 rhythmContexts[i, :, :] = r
                 melodyContexts[:, i, :] = m
 
-        #print(rhythmContexts, melodyContexts)
+        print('[NeuralNet]', 'Contexts:', rhythmContexts, melodyContexts)
 
         return rhythmContexts, melodyContexts
 
@@ -335,7 +339,7 @@ class NeuralNet():
                     if kwargs['sample_mode'] == 'dist' or kwargs['sample_mode'] == 'top':
                         chord = rand.choice(len(chord_outputs[0]), p=chord_outputs[0])
                     else:
-                        chord = np.argmax(chordOutputs[0], axis=-1)
+                        chord = np.argmax(chord_outputs[0], axis=-1)
 
                     intervals = self.chordDict[chord]
                     for interval in intervals:
