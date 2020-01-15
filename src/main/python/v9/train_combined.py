@@ -20,7 +20,7 @@ from tensorflow.python.keras.callbacks import TensorBoard
 
 if __name__ == "__main__":
    
-    top_dir = "Trainings"    
+    top_dir = "v9/Trainings"
 #    save_dir = asctime().split()
 #    save_dir = "_".join([*save_dir[0:3], *save_dir[3].split(":")[:2]])
     save_dir = "first_with_lead"

@@ -16,14 +16,23 @@ from core import DEFAULT_SECTION_PARAMS, DEFAULT_AI_PARAMS, DEFAULT_META_DATA
 
 RANDOM = 0
 NEURAL = 1
+EUROAI = 2
 
-PLAYER = NEURAL
+PLAYER = 1
 
-if PLAYER == NEURAL:
+if PLAYER != RANDOM:
     from v9.Nets.ChordNetwork import ChordNetwork
     from v9.Nets.MetaEmbedding import MetaEmbedding
     from v9.Nets.MetaPredictor import MetaPredictor
     from v9.Nets.CombinedNetwork import CombinedNetwork
+
+#elif PLAYER == EUROAI:
+#    from euroAI.Nets.ChordNetwork import ChordNetwork
+#    from euroAI.Nets.MetaEmbedding import MetaEmbedding
+#    from euroAI.Nets.MetaPredictor import MetaPredictor
+#    from euroAI.Nets.CombinedNetwork import CombinedNetwork
+
+
 
 class RandomPlayer():
     ''' For testing purpose only! '''
@@ -48,10 +57,22 @@ class NeuralNet():
         startTime = time.time()
 
         if resources_path:
-            trainingsDir = resources_path + '/first_with_lead/'
+            if PLAYER == NEURAL:
+                trainingsDir = resources_path + '/v9_lead/'
+            elif PLAYER == EUROAI:
+                trainingsDir = resources_path + '/euroAI_lead/'
+            else:
+                raise '[NeuralNet] Unknown player initialised. Aborting'
+
+
         else:
-            #trainingsDir = './v9/Trainings/first_with_lead/'
-            trainingsDir = os.path.dirname(os.path.abspath(__file__)) + '/v9/Trainings/first_with_lead/'
+            if PLAYER == NEURAL:
+                trainingsDir = os.path.dirname(os.path.abspath(__file__)) + '/v9/Trainings/v9_lead'
+            elif PLAYER == EUROAI:
+                trainingsDir = os.path.dirname(os.path.abspath(__file__)) + '/v9/Trainings/euroAI_lead'
+            else:
+                raise '[NeuralNet] Unknown player initialised. Aborting'
+
 
         print('[NeuralNet]', 'trainingsDir:', trainingsDir)
 
@@ -65,8 +86,8 @@ class NeuralNet():
         self.metaEmbedder = MetaEmbedding.from_saved_custom(trainingsDir + '/meta')
         metaPredictor = MetaPredictor.from_saved_custom(trainingsDir + '/meta')
 
-        #weightsFolder = trainingsDir + 'weights'
-        weightsFolder = trainingsDir + 'weights/_checkpoint_19'
+        weightsFolder = trainingsDir + 'weights'
+        #weightsFolder = trainingsDir + 'weights/_checkpoint_19'
 
         self.combinedNet = CombinedNetwork.from_saved_custom(weightsFolder, metaPredictor,
                                                              generation=True, compile_now=False)
@@ -156,7 +177,8 @@ class NeuralNet():
                            self.rhythmDict[(0.5,)]],
                     'fb': [self.rhythmDict[(0.0, 0.25, 0.5, 0.75)],
                            self.rhythmDict[(0.0, 0.25, 0.5)]],
-                    'tb': [self.rhythmDict[(0.0, 0.3333, 0.6667)]],
+                    #'tb': [self.rhythmDict[(0.0, 0.3333, 0.6667)]],
+                    'tb': [self.rhythmDict[(0.0,)]],
                 }[rhythmType])
             rhythmContexts = [np.random.choice(rhythmPool, size=(1, 4)) for _ in range(4)]
 
@@ -372,9 +394,9 @@ class NetworkEngine(multiprocessing.Process):
 
     def run(self):
         if not self.network:
-            if PLAYER == NEURAL:
+            if PLAYER == NEURAL or PLAYER == EUROAI:
                 self.network = NeuralNet(resources_path=self.resources_path)
-            else:
+            elif PLAYER == EUROAI:
                 self.network = RandomPlayer()
             #print('[NetworkEngine]', 'network loaded')
 

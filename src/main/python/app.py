@@ -1,10 +1,8 @@
-
 #pylint: disable=invalid-name,missing-docstring
 
 import time
 import json
 import threading
-#import tkinter as tk
 import multiprocessing
 
 from pythonosc import udp_client
@@ -13,7 +11,6 @@ from mido import Message, MidiFile, MidiTrack, MetaMessage
 
 from core import Instrument, DEFAULT_SECTION_PARAMS
 from network import NetworkEngine
-#from gui.gui import TimeLine, InstrumentPanel
 
 APP_NAME = "musAIc (v0.9.0.)"
 
@@ -28,10 +25,11 @@ def convertMidiToOsc(msg):
     return (msg.type, (msg.channel, msg.note, msg.velocity))
 
 
-class Player(multiprocessing.Process):
+class MediaPlayer(multiprocessing.Process):
+    '''Server that plays tracks, either MIDI or OSC type.'''
 
     def __init__(self, msgQueue, clockVar):
-        super(Player, self).__init__()
+        super(MediaPlayer, self).__init__()
 
         self.msgQueue = msgQueue
         self.clockVar = clockVar
@@ -66,7 +64,7 @@ class Player(multiprocessing.Process):
 
             if self.playing.is_set():
                 # --- Before measure starts
-                print('[PLAYER]', 'Bar', self.clockVar[0])
+                print('[MediaPlayer]', 'Bar', self.clockVar[0])
 
                 # BPM=80
                 tickTime = (60/self.bpm)/24
@@ -105,7 +103,7 @@ class Player(multiprocessing.Process):
 
                 # --- Stopping playback
                 if self.clockVar[2] == 0:
-                    print('[Player]', 'stopping...')
+                    print('[MediaPlayer]', 'stopping...')
                     #self.clockVar[1] = 0
                     self.allOff()
                     self.client.send_message('/clockStop', 1)
@@ -121,7 +119,7 @@ class Player(multiprocessing.Process):
         if self.port:
             self.port.reset()
             self.port.close()
-        super(Player, self).join(timeout)
+        super(MediaPlayer, self).join(timeout)
 
     def sendOut(self, msg):
         if self.client and self.osc:
@@ -139,7 +137,7 @@ class Player(multiprocessing.Process):
                     mType = msg['type']
                     data = msg['data']
                 except KeyError:
-                    print('[Player]', 'Message in wrong format:', msg)
+                    print('[MediaPlayer]', 'Message in wrong format:', msg)
                     continue
 
                 #print(mType, data)
@@ -162,23 +160,23 @@ class Player(multiprocessing.Process):
                     # change of global transposition...
                     self.globalTranspose = data
                 elif mType == 'client_options':
-                    print('[Player]', 'client options set', data)
+                    print('[MediaPlayer]', 'client options set', data)
                     addr = data[0]
                     port = data[1]
                     self.client = udp_client.SimpleUDPClient(addr, port)
                     self.sendOscClock = data[2]
                 elif mType == 'midi_port_setting':
-                    print('[Player]', 'midi options set:', data)
+                    print('[MediaPlayer]', 'midi options set:', data)
                     if self.port:
-                        self.port.reset()
+                        self.port.panic()
                         self.port.close()
-                    self.port = mido.open_output(data[0])
+                    self.port = mido.open_output(data[0], client_name="musAIc")
                 elif mType == 'midi_out':
                     self.midi = data[0]
                 elif mType == 'osc_out':
                     self.osc = data[0]
                 else:
-                    print('[Player]', 'Unknown message type:', msg)
+                    print('[MediaPlayer]', 'Unknown message type:', msg)
 
         except multiprocessing.queues.Empty:
             return
@@ -199,11 +197,11 @@ class Player(multiprocessing.Process):
         self.clockVar[2] = 0
 
     def allOff(self):
-        #print('[Player]', 'allOff')
+        #print('[MediaPlayer]', 'allOff')
         if self.client and self.osc:
             self.client.send_message('/panic', 0)
-        if self.port:
-            self.port.reset()
+        if self.port and self.midi:
+            self.port.panic()
 
 
 class Engine(threading.Thread):
@@ -223,6 +221,11 @@ class Engine(threading.Thread):
         self.netRequestQueue = multiprocessing.Queue()
         self.netReturnQueue = multiprocessing.Queue()
 
+        self.callbacks = {
+            'instrument_added': set(),
+            'section_added': set(),
+        }
+
         self.oscOptions = {
             'addr': CLIENT_ADDR,
             'port': CLIENT_PORT,
@@ -240,7 +243,7 @@ class Engine(threading.Thread):
 
         # clock var [bar_num, tick, status]
         self.clockVar = multiprocessing.Array('i', [0, 0, 0])
-        self.player = Player(self.msgQueue, self.clockVar)
+        self.player = MediaPlayer(self.msgQueue, self.clockVar)
 
         self.networkEngine = NetworkEngine(self.netRequestQueue,
                                            self.netReturnQueue,
@@ -249,7 +252,9 @@ class Engine(threading.Thread):
         self.status = STOPPED
         self.stopRequest = multiprocessing.Event()
 
-        mido.set_backend('mido.backends.pygame')
+        #mido.set_backend('mido.backends.pygame')
+        mido.set_backend('mido.backends.rtmidi')
+
 
         self.player.start()
         self.networkEngine.start()
@@ -259,7 +264,14 @@ class Engine(threading.Thread):
             self.checkSendMessages()
             self.checkReturnedMessages()
 
-            time.sleep(1/10)
+            time.sleep(1/30)
+
+    def call(self, event, *args):
+        for func in self.callbacks[event]:
+            func(*args)
+
+    def addCallback(self, event, func):
+        self.callbacks[event].add(func)
 
     def checkSendMessages(self):
         # find all requests that meet requirements and send to network...
@@ -304,7 +316,8 @@ class Engine(threading.Thread):
                 self.sendInstrumentEvents(instrument.id_)
 
     def changeChannel(self, insID, newChan):
-        self.instruments[insID].chan = newChan
+        #self.instruments[insID].chan = newChan
+        self.instruments[insID].changeChannel(newChan)
         msg = {'type': 'chan',
                'data': (insID, newChan)}
         self.msgQueue.put(msg)
@@ -390,14 +403,18 @@ class Engine(threading.Thread):
     def getMidiPorts(self):
         return mido.get_output_names()
 
-    def addInstrument(self):
+    def addInstrument(self, **kwargs):
         id_ = len(self.instruments.keys())
-        instrument = Instrument(id_, 'INS ' + str(id_), id_+1, self)
+        name = kwargs.get('name', 'INS ' + str(id_))
+        instrument = Instrument(id_, name, id_+1, self)
+
         instrument.track.addCallback(lambda x: self.sendInstrumentEvents(id_))
         self.instruments[id_] = instrument
         self.changeChannel(id_, id_+1)
         self.changeOctaveTranspose(id_)
         self.changeMute(id_)
+
+        self.call('instrument_added', instrument)
 
         return instrument
 
@@ -440,20 +457,30 @@ class Engine(threading.Thread):
             ins_data = instrument.getData()
             data['instruments'][ins_data['id']] = ins_data
 
-        with open(name, 'w') as f:
-            json.dump(data, f, indent=4)
+        #print('[Engine]', 'compiled dictionary, saving...')
+
+        try:
+            with open(name, 'w') as f:
+                json.dump(data, f, indent=4)
+        except Exception as e:
+            print('\n------------')
+            print(data)
+            print('\n------------')
+            print(e)
+            return
 
         print('Done')
 
-    def loadFile(self, name):
-        print('[Engine]', 'opening file', name, end='... ')
-
+    def loadFile(self, fp):
+        if fp == '':
+            return
         try:
-            with open(name, 'r') as f:
+            with open(fp, 'r') as f:
                 data = json.load(f)
         except FileNotFoundError:
-            print('cannot be found, aborting')
             return
+
+        print('[Engine]', 'opening file', fp, end='... ')
 
         # reset environment...
         self.requests = []
@@ -481,10 +508,34 @@ class Engine(threading.Thread):
             self.changeOctaveTranspose(id_, insData['octave_transpose'])
             self.changeMute(id_, insData['mute'])
 
+            self.call('instrument_added', instrument)
+
         print('loaded')
 
-    def exportMidiFile(self, name='test.mid'):
-        print('[Engine]', 'exporting MIDI file')
+    def importMidiFile(self, fp):
+        if fp == '':
+            return
+
+        print('[Engine]', 'importing MIDI file', fp)
+
+        try:
+            midi = mido.MidiFile(fp)
+        except FileNotFoundError:
+            print('[Engine]', fp, 'not found')
+            return
+
+        for track in midi.tracks:
+            # create new instrument for each track
+            instrument = self.addInstrument(name=track.name)
+            instrument.newSection(sectionType='fixed', track=track, tpb=midi.ticks_per_beat)
+
+        print('[Engine]', 'done')
+
+    def exportMidiFile(self, fp='test.mid'):
+        if fp == '':
+            return
+
+        print('[Engine]', 'exporting MIDI file', fp)
 
         mid = MidiFile(ticks_per_beat=24, type=1)
 
@@ -500,16 +551,25 @@ class Engine(threading.Thread):
                         events.append((n*96+t, msg))
 
             # sort by time, then note off events
-            events.sort(key=lambda x: x[0])
+            events.sort(key=lambda x: (x[0], x[1].type))
 
             track.append(MetaMessage('track_name', name=instrument.name))
             for i, e in enumerate(events):
                 msg = e[1]
 
+                # when saving, time is number of ticks to NEXT event?
+                #try:
+                #    t = events[i+1][0] - e[0]
+                #except IndexError:
+                #    #t = len(instrument.track.flatMeasures) * 96 - e[0]
+                #    t = 0
+
                 if i > 0:
                     t = e[0] - events[i-1][0]
                 else:
                     t = e[0]
+
+
 
                 print(msg, t)
                 nn = msg.note + 12*self.instrumentOctave[instrument.id_] + self.global_transpose
@@ -518,7 +578,7 @@ class Engine(threading.Thread):
             track.append(MetaMessage('end_of_track'))
             mid.tracks.append(track)
 
-        mid.save(name)
+        mid.save(fp)
 
         print('[Engine]', 'done')
 

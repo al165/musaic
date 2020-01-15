@@ -5,10 +5,10 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import Qt
 
 from gui.elements import InstrumentPanel, TrackView, TimeView, SectionView
-from app import Player, Engine
+from app import Engine
 
 
-APP_NAME = "musAIc v1.0"
+APP_NAME = "musAIc v1.0.1"
 
 INS_PANEL_HEIGHT = 100
 TIMELINE_HEIGHT = 20
@@ -108,6 +108,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.engine = Engine(resources_path=resources_path, argv=argv)
         self.engine.start()
 
+        self.engine.addCallback('instrument_added', self.instrumentAdded)
+
         main = QtWidgets.QWidget()
         main_layout = QtWidgets.QVBoxLayout()
 
@@ -135,6 +137,11 @@ class MainWindow(QtWidgets.QMainWindow):
         send_options = QtWidgets.QPushButton('options')
         send_options.clicked.connect(self.showOptions)
         controls_layout.addWidget(send_options)
+
+        import_ = QtWidgets.QPushButton('import midi')
+        import_.clicked.connect(self.importMidi)
+        import_.setToolTip('Import a MIDI file into project')
+        controls_layout.addWidget(import_)
 
         export = QtWidgets.QPushButton('export midi')
         export.clicked.connect(self.exportMidi)
@@ -252,11 +259,11 @@ class MainWindow(QtWidgets.QMainWindow):
         dialog = ClientOptions(self.engine)
         dialog.exec_()
 
-    def addInstrument(self, *args, instrument=None, new_section=True):
-        if not instrument:
-            instrument = self.engine.addInstrument()
+    def addInstrument(self, *args):
+        instrument = self.engine.addInstrument()
 
-        print('MainWindow', 'addInstrument', instrument.id_)
+    def instrumentAdded(self, instrument):
+        print('[MainWindow]', 'instrumentAdded', instrument.id_)
         panel = InstrumentPanel(instrument, self.engine, self._track_view)
         panel.setFixedHeight(INS_PANEL_HEIGHT)
 
@@ -265,9 +272,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._instrument_scroll_layout.addStretch(1)
         self._instrument_panels.append(panel)
         self._track_view.addInstrument(instrument)
+        self._track_view.buildSections(instrument.id_)
 
-        if new_section:
-            panel.newSection()
 
     def deleteInstrument(self, instrumentID):
         pass
@@ -305,19 +311,18 @@ class MainWindow(QtWidgets.QMainWindow):
         self.engine.loadFile(file_name[0])
 
         # rebuild GUI...
-        for instrument in self.engine.instruments.values():
-            print(instrument.id_, instrument.sections, instrument.chan)
-            panel = InstrumentPanel(instrument, self.engine, self._track_view)
-            panel.setFixedHeight(INS_PANEL_HEIGHT)
+        #for instrument in self.engine.instruments.values():
+        #    print(instrument.id_, instrument.sections, instrument.chan)
+        #    panel = InstrumentPanel(instrument, self.engine, self._track_view)
+        #    panel.setFixedHeight(INS_PANEL_HEIGHT)
 
-            panel.setToolTip(f'{instrument.name}, {instrument.id_}, {instrument.chan}')
-            self._instrument_scroll_layout.takeAt(len(self._instrument_panels))
-            self._instrument_scroll_layout.addWidget(panel, alignment=Qt.AlignLeft)
-            self._instrument_scroll_layout.addStretch(1)
-            self._instrument_panels.append(panel)
-            self._track_view.addInstrument(instrument)
-            #self.addInstrument(instrument=instrument, new_section=False)
-            self._track_view.buildSections(instrument.id_)
+        #    panel.setToolTip(f'{instrument.name}, {instrument.id_}, {instrument.chan}')
+        #    self._instrument_scroll_layout.takeAt(len(self._instrument_panels))
+        #    self._instrument_scroll_layout.addWidget(panel, alignment=Qt.AlignLeft)
+        #    self._instrument_scroll_layout.addStretch(1)
+        #    self._instrument_panels.append(panel)
+        #    self._track_view.addInstrument(instrument)
+        #    self._track_view.buildSections(instrument.id_)
 
         self.global_controls['bpm'].setValue(self.engine.bpm)
         self.global_controls['transpose'].setValue(self.engine.global_transpose)
@@ -332,9 +337,15 @@ class MainWindow(QtWidgets.QMainWindow):
         print(file_name)
         self.engine.saveFile(file_name[0])
 
+    def importMidi(self):
+        print('[MainWindow]', 'Importing...')
+        file_name = QtWidgets.QFileDialog.getOpenFileName(self, 'Import MIDI...', filter='MIDI (*.mid *.midi)')
+        print(file_name)
+        self.engine.importMidiFile(file_name[0])
+
     def exportMidi(self):
         print('[MainWindow]', 'Exporting...')
-        file_name = QtWidgets.QFileDialog.getSaveFileName(self, 'Export MIDI...', filter='MIDI (*.mid)')
+        file_name = QtWidgets.QFileDialog.getSaveFileName(self, 'Export MIDI...', filter='MIDI (*.mid *.midi)')
         print(file_name)
         self.engine.exportMidiFile(file_name[0])
 

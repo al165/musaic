@@ -1,6 +1,8 @@
 
 #pylint: disable=invalid-name,missing-docstring
 
+import json
+
 from copy import deepcopy
 from random import randint
 from collections import defaultdict
@@ -48,6 +50,12 @@ def forceListLength(l, length, alt=None):
         return l[:length]
     return l + [alt for _ in range(length - len(l))]
 
+def isJSONSerializable(x):
+    try:
+        json.dumps(x)
+        return True
+    except (TypeError, OverflowError):
+        return False
 
 class Measure:
     '''
@@ -64,16 +72,15 @@ class Measure:
 
         self.callbacks = set()
 
-        if notes:
-            # Note: (nn, start_tick, end_tick), where nn=0 is a pause
+        if notes is not None:
+            # Note: (nn, start_tick, end_tick), where nn=0 is a pause. 96 ticks per measure (24 per beat)
             self.notes = notes
-            self.MidiEvents = self.convertNotesToMidiEvents(notes)
+            #self.MidiEvents = self.convertNotesToMidiEvents(notes)
             self.empty = False
-        elif events:
-            # {tick: MIDI Event} where MIDI Event = ('/eventType', (chan, nn, vel))
-            self.MidiEvents = events
-            # FIXME self.convertMidiEventsToNotes()
-            self.notes = []
+        elif events is not None:
+            # {tick: [MIDI Events]} where MIDI Event = ('/eventType', (chan, nn, vel))
+            #self.MidiEvents = events
+            self.notes = self.convertMidiEventsToNotes(events)
             self.empty = False
         else:
             self.setEmpty()
@@ -107,15 +114,38 @@ class Measure:
         return dict(events)
 
     def convertMidiEventsToNotes(self, events):
-        #TODO
-        pass
+        ''' Returns list of notes (nn, start_tick, end_tick) '''
+        #FIXME
+        print('[Measure]', 'convertMidiEventsToNotes')
+        notes = []
+        #noteTimes = defaultdict(list)
+
+        #for t in sorted(events.keys()):
+        #    for msg in events[t]:
+        #        nn = msg.note
+        #        if msg.type == 'note_on':
+        #            if nn in noteTimes:
+        #                # assume the note is released and played again
+        #                notes.append((nn, noteTimes[nn], t))
+        #            noteTimes[nn] = t
+        #        elif msg.type == 'note_off':
+        #            if nn in noteTimes:
+        #                notes.append((nn, noteTimes[nn], t))
+        #                del noteTimes[nn]
+        #        else:
+        #            # meta message type
+        #            continue
+        #
+        #print(notes)
+
+        return notes
 
     def isEmpty(self):
         return self.empty
 
     def setNotes(self, notes):
         self.notes = notes
-        self.convertNotesToMidiEvents(self.notes)
+        #self.MidiEvents = self.convertNotesToMidiEvents(self.notes)
         self.empty = False
         self.genRequestSent = False
         self.call()
@@ -138,12 +168,12 @@ class Measure:
         ''' Applies note length and velocity changes '''
         return self.convertNotesToMidiEvents(self.getNotes())
 
-    def setMidiEvents(self, events):
-        self.events = events
-        # TODO: self.convertMidiEventsToNotes()
-        self.empty = False
-        self.genRequestSent = False
-        self.call()
+    #def setMidiEvents(self, events):
+    #    self.events = events
+    #    # TODO: self.convertMidiEventsToNotes()
+    #    self.empty = False
+    #    self.genRequestSent = False
+    #    self.call()
 
     def setOctave(self, transpose_octave):
         self.transposeOctave = transpose_octave
@@ -159,9 +189,13 @@ class Measure:
     def setVelocities(self, velocities):
         self.velocityRange = velocities
 
+    def setChan(self, chan):
+        self.chan = chan
+        #self.MidiEvents = self.getMidiEvents()
+
     def setEmpty(self):
         self.notes = []
-        self.MidiEvents = dict()
+        #self.MidiEvents = dict()
         self.empty = True
         self.call()
 
@@ -386,10 +420,10 @@ class SectionBase:
         self.flatMeasures = []
         self.measureCount = 0
 
-        self.params = {**DEFAULT_SECTION_PARAMS, **kwargs}
-        #self.params = dict()
-        #self.changeParameter(**{**DEFAULT_SECTION_PARAMS, **kwargs})
-        self.changeParameter(**self.params)
+        #self.params = {**DEFAULT_SECTION_PARAMS, **kwargs}
+        self.params = dict()
+        self.changeParameter(**{**DEFAULT_SECTION_PARAMS, **kwargs})
+        #self.changeParameter(**self.params)
         #for k, v in kwargs.items():
         #    self.params[k] = v
 
@@ -413,7 +447,10 @@ class SectionBase:
         print('[SectionBase]', 'change parameters:')
         for k, v in kwargs.items():
             print('  ', k, ':', v)
-            self.params[k] = v
+            if isJSONSerializable(v):
+                self.params[k] = v
+            else:
+                print('    (WARNING: not serializable)')
 
         self.flattenMeasures()
 
@@ -431,6 +468,18 @@ class SectionBase:
             for m in self.measures.values():
                 m.setVelocities(kwargs['velocity_range'])
 
+        if 'chan' in kwargs:
+            for m in self.measures.values():
+                m.setChan(int(kwargs['chan']))
+
+    def newMeasure(self, notes=None, events=None):
+        id_ = self.measureCount
+        m = Measure(id_, chan=self.params.get('chan', 1), notes=notes, events=events)
+
+        m.addCallback(self.flattenMeasures)
+        self.measures[id_] = m
+        self.measureCount += 1
+        return m
 
     def measureAt(self, n):
         assert n < len(self.flatMeasures), f'Index {n} for Section {self.name} too large'
@@ -440,13 +489,12 @@ class SectionBase:
 
         return None
 
-
     def flattenMeasures(self):
         length = self.params['length']
         track = [None] * (length*self.params['loop_num'])
 
         for i in range(self.params['loop_num']):
-            track[i*length:i*length] = self.mainMeasures
+            track[i*length:(i+1)*length] = self.mainMeasures
 
         self.flatMeasures = track
         self.call()
@@ -513,211 +561,6 @@ class SectionBase:
         return '|' + ''.join(map(str, self.flatMeasures))
 
 
-
-
-#class Section:
-#    '''
-#    Section: collection of parameters, attributes and properties of a musical section.
-#    '''
-#    def __init__(self, name, id_, blank=False, **kwargs):
-#        self.name = name
-#        self.id_ = id_
-#
-#        self.callbacks = set()
-#
-#        self.params = deepcopy(DEFAULT_SECTION_PARAMS)
-#        for k, v in kwargs.items():
-#            self.params[k] = v
-#
-#        #self.blank = blank
-#
-#        self.mainMeasures = []
-#        self.altEnds = [[]]
-#        self.flatMeasures = [None]*self.params['length']
-#        self.measures = dict()
-#        self.measureCount = 0
-#
-#        self.changeParameter(**self.params)
-#
-#    def call(self):
-#        ''' call functions when parameters change'''
-#        for func in self.callbacks:
-#            func()
-#
-#    def addCallback(self, func):
-#        self.callbacks.add(func)
-#
-#    def removeCallback(self, func):
-#        if func in self.callbacks:
-#            self.callbacks.remove(func)
-#
-#    def newMeasure(self, notes=None, events=None):
-#        id_ = self.measureCount
-#        if 'chan' in self.params:
-#            m = Measure(id_, chan=self.params['chan'], notes=notes, events=events)
-#        else:
-#            m = Measure(id_, notes=notes, events=events)
-#
-#        m.addCallback(self.flattenMeasures)
-#        self.measures[id_] = m
-#        self.measureCount += 1
-#        return m
-#
-#    def changeParameter(self, **kwargs):
-#        #print('[Section]', 'changeParameter', kwargs)
-#        for key, val in kwargs.items():
-#            self.params[key] = val
-#            if key == 'lead' and val == -1:
-#                self.params['lead'] = None
-#
-#        # make sure looping lengths are all correct
-#        if self.params['loop_alt_len'] >= self.params['length']:
-#            self.params['loop_alt_len'] = self.params['length'] - 1
-#
-#        # fill in extra measures
-#        for _ in range(max(0, self.params['length'] - len(self.mainMeasures))):
-#            self.mainMeasures.append(self.newMeasure())
-#
-#        self.altEnds[0] = self.mainMeasures[1:]
-#        # first make sure there are at least the correct number of alternative endings..
-#        for _ in range(max(0, self.params['loop_alt_num'] - len(self.altEnds))):
-#            altEnd = [self.newMeasure() for _ in range(self.params['loop_alt_num'])]
-#            self.altEnds.append(altEnd)
-#
-#        # then make sure each alternative end is long enough..
-#        for i in range(1, len(self.altEnds)):
-#            for _ in range(max(0, self.params['loop_alt_len'] - len(self.altEnds[i]))):
-#                self.altEnds[i].append(self.newMeasure())
-#
-#        if 'transpose_octave' in kwargs:
-#            #print('[Section]', 'updated section octave', kwargs['transpose_octave'])
-#            for m in self.measures.values():
-#                m.setOctave(kwargs['transpose_octave'])
-#
-#        if 'note_length' in kwargs:
-#            #print('[Section]', 'updated note length', kwargs['note_length'])
-#            for m in self.measures.values():
-#                m.setNoteLength(kwargs['note_length'])
-#
-#        if 'velocity_range' in kwargs:
-#            for m in self.measures.values():
-#                m.setVelocities(kwargs['velocity_range'])
-#
-#        self.flattenMeasures()
-#
-#    def measureAt(self, n):
-#        assert n < len(self.flatMeasures), f'Index {n} for Section {self.name} too large'
-#
-#        if self.flatMeasures > 0:
-#            return self.flatMeasures[n]
-#
-#        return None
-#
-#    def flattenMeasures(self):
-#        if self.blank:
-#            self.flatMeasures = [None]*self.params['length']
-#            return
-#
-#        length = self.params['length']
-#        numAlts = self.params['loop_alt_num']
-#        lenAlts = self.params['loop_alt_len']
-#
-#        lenMainMeasures = length - lenAlts
-#
-#        main = forceListLength(self.mainMeasures, lenMainMeasures)
-#
-#        track = [None] * (length*self.params['loop_num'])
-#
-#        for i in range(self.params['loop_num']):
-#            track[i*length:i*length+lenMainMeasures] = main
-#            if lenAlts > 0:
-#                altEnd = self.altEnds[i%numAlts][-lenAlts:]
-#                track[i*length+lenMainMeasures:i*length+length] = altEnd
-#
-#        self.flatMeasures = track
-#        self.call()
-#
-#    def mainLength(self):
-#        return self.params['length']
-#
-#    def getData(self):
-#        data = {
-#            'name': self.name,
-#            'id': self.id_,
-#            'params': self.params,
-#            'main_measures': [],
-#            'alt_ends': [],
-#            'measures': dict(),
-#            'blank': self.blank
-#        }
-#
-#        for m in self.mainMeasures:
-#            if m:
-#                data['main_measures'].append(m.id_)
-#            else:
-#                data['main_measures'].append(None)
-#
-#        for altEnd in self.altEnds:
-#            ae = []
-#            for m in altEnd:
-#                if m:
-#                    ae.append(m.id_)
-#                else:
-#                    ae.append(None)
-#
-#            data['alt_ends'].append(ae)
-#
-#        for mID, measure in self.measures.items():
-#            data['measures'][mID] = measure.getData()
-#
-#        return data
-#
-#    def setData(self, secData):
-#        self.name = secData['name']
-#        self.id_ = secData['id']
-#        self.params = secData['params']
-#        self.mainMeasures = []
-#        self.altEnds = []
-#        self.measures = dict()
-#        self.blank = secData['blank']
-#
-#        for mID, mData in secData['measures'].items():
-#            measure = Measure(mData['id'], notes=mData['notes'])
-#            measure.addCallback(self.flattenMeasures)
-#            self.measures[int(mID)] = measure
-#
-#        for mID in secData['main_measures']:
-#            if mID == None:
-#                self.mainMeasures.append(None)
-#            else:
-#                self.mainMeasures.append(self.measures[int(mID)])
-#
-#        for altEnd in secData['alt_ends']:
-#            ae = []
-#            for mID in altEnd:
-#                if mID == None:
-#                    ae.append(None)
-#                else:
-#                    ae.append(self.measures[mID])
-#            self.altEnds.append(ae)
-#
-#        if len(self.measures.keys()) > 0:
-#            self.measureCount = max(self.measures.keys()) + 1
-#        else:
-#            self.measureCount = 0
-#
-#        self.flattenMeasures()
-#
-#    def __len__(self):
-#        return self.params['length'] * self.params['loop_num']
-#
-#    def __repr__(self):
-#        return f'|{self.name}, {self.params["length"]}'
-#
-#    def __str__(self):
-#        return '|' + ''.join(map(str, self.flatMeasures))
-
-
 class AISection(SectionBase):
     '''
     Section that has been generated by the AI, so has controls for generation.
@@ -751,17 +594,6 @@ class AISection(SectionBase):
                 self.altEnds[i].append(self.newMeasure())
 
 
-    def newMeasure(self, notes=None, events=None):
-        id_ = self.measureCount
-        if 'chan' in self.params:
-            m = Measure(id_, chan=self.params['chan'], notes=notes, events=events)
-        else:
-            m = Measure(id_, notes=notes, events=events)
-
-        m.addCallback(self.flattenMeasures)
-        self.measures[id_] = m
-        self.measureCount += 1
-        return m
 
     def flattenMeasures(self):
         length = self.params['length']
@@ -805,6 +637,8 @@ class AISection(SectionBase):
         return data
 
     def setData(self, secData):
+        super().setData(secData)
+
         self.altEnds = []
         for altEnd in secData['alt_ends']:
             ae = []
@@ -815,14 +649,14 @@ class AISection(SectionBase):
                     ae.append(self.measures[mID])
             self.altEnds.append(ae)
 
-        super().setData(secData)
+        self.flattenMeasures()
 
 
 class FixedSection(SectionBase):
     '''
     Section that has been read from a file, rather than generated. Therefore no generation parameters
     Parameters:
-        length, start measure, repeats?
+        length, start measure?, repeats?
         velocity, transposition etc.
     '''
 
@@ -832,24 +666,67 @@ class FixedSection(SectionBase):
 
         self.type_ = 'fixed'
 
-    def readMidi(self, midiFile, trackNum=0):
-        '''TODO: read MIDI data and create measures'''
+        if 'track' in kwargs and 'tpb' in kwargs:
+            self.readMidiTrack(kwargs['track'], kwargs['tpb'])
 
-        # - Find number of measures...
-        track = midiFile.tracks[trackNum]
-        num_measures = math.ceil(sum(m.time for m in track)/midiFile.ticks_per_beat/4)
+    def readMidiTrack(self, track, tpb):
+        '''Converts a MIDI track to notes.'''
+        print('[FixedSection]', 'readMidiTrack')
 
-        # - Fill in measures
+        # Collect all event start times at the 24tpb resolution
         t = 0
+        notes = []
+        noteStart = dict()
+
         for msg in track:
+            t += int(24 * msg.time/tpb)
+
             if msg.type not in {'note_on', 'note_off'}:
+                print('MetaMessage:', t, msg.type)
                 continue
 
+            m_num = t // 96
+            nn = msg.note
 
+            print(t, nn, msg.type)
+            if msg.type == 'note_on':
+                if nn in noteStart:
+                    # assume note released and played again
+                    notes.append((nn, noteStart[nn], t))
+                noteStart[nn] = t
+            elif msg.type == 'note_off':
+                if nn in noteStart:
+                    notes.append((nn, noteStart[nn], t))
+                    del noteStart[nn]
+
+        #print('[FixedMeasure]', 'Length of orphaned notes:', len(noteStart.items()))
+        measures = defaultdict(list)
+        for n in notes:
+            m_num = n[1] // 96
+            # recalulate on time from measure start...
+            start_time = n[1] - (96 * m_num)
+            end_time = n[2] - (96 * m_num)
+            measures[m_num].append((n[0], start_time, end_time))
+
+        # - For each measure, collect the messages and set events...
+        num_measures = max(list(measures.keys())) + 1
+        #num_measures = (t-1) // 96 + 1
+
+        self.changeParameter(length=num_measures)
+        for i in range(num_measures):
+            if i in measures:
+                m = self.newMeasure(notes=measures[i])
+            else:
+                # empty...
+                m = self.newMeasure(notes=[])
+
+            self.mainMeasures.append(m)
+
+        self.flattenMeasures()
 
 class Block:
     '''
-    Block: abstract container for sections.
+    Block: container for section.
     '''
     def __init__(self, id_, sections=None):
         self.id_ = id_
@@ -898,7 +775,6 @@ class Block:
                 self.__class__.__name__, name
             ))
 
-
 class Instrument:
     def __init__(self, id_, name, chan, engine):
         self.id_ = id_
@@ -926,9 +802,11 @@ class Instrument:
 
         if sectionType == 'ai':
             sectionParams = {**DEFAULT_SECTION_PARAMS, **DEFAULT_AI_PARAMS, **params}
+            sectionParams['chan'] = self.chan
             section = AISection(name, idx, **sectionParams)
         elif sectionType == 'fixed':
             sectionParams = {**DEFAULT_SECTION_PARAMS, **params}
+            sectionParams['chan'] = self.chan
             section = FixedSection(name, idx, **sectionParams)
         else:
             print('[Instrument]', 'Unknown sectionType', sectionType)
@@ -959,7 +837,7 @@ class Instrument:
             if m:
                 for t, e in m.getMidiEvents().items():
                     if t >= 96:
-                        addEvents(events, n+1, t-96, e)
+                        addEvents(events, n+(t//96), t%96, e)
                     else:
                         addEvents(events, n, t, e)
 
@@ -968,6 +846,10 @@ class Instrument:
     def changeSectionParameters(self, id_, **newParams):
         self.sections[id_].changeParameter(**newParams)
         self.track.flattenMeasures()
+
+    def changeChannel(self, newChan):
+        for section in self.sections.values():
+            section.changeParameter(chan=newChan)
 
     def requestGenerateMeasures(self, sectionID=None, gen_all=False):
         ''' Compiles and sends request for section to generate new bars.
@@ -999,10 +881,6 @@ class Instrument:
             if m.genRequestSent:
                 print(i, 'm.genRequestSent')
                 continue
-
-            #request = deepcopy(DEFAULT_SECTION_PARAMS)
-            #for k, v in section.params.items():
-            #    request[k] = v
 
             request = {**DEFAULT_SECTION_PARAMS, **DEFAULT_AI_PARAMS, **section.params}
 
@@ -1057,8 +935,13 @@ class Instrument:
         self.sections = dict()
 
         for secID, secData in insData['sections'].items():
-            section = Section(secData['name'], secData['id'],
-                              blank=secData['blank'], **secData['params'])
+            if secData['type'] == 'ai':
+                section = AISection(secData['name'], secData['id'],
+                                    **secData['params'])
+            elif secData['type'] == 'fixed':
+                section = FixedSection(secData['name'], secData['id'],
+                                       **secData['params'])
+
             section.setData(secData)
             self.sections[int(secID)] = section
 

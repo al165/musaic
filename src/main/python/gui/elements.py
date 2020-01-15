@@ -7,7 +7,6 @@ from colorsys import hsv_to_rgb
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import Qt
 
-from app import Player, Engine
 from core import DEFAULT_META_DATA, DEFAULT_SECTION_PARAMS, DEFAULT_AI_PARAMS
 from gui.sliders import BoxRangeSlider, BoxSlider, Knob
 
@@ -16,6 +15,7 @@ DEFAULT_BAR_WIDTH = 80
 
 
 class TimeView(QtWidgets.QGraphicsView):
+
     def __init__(self, engine, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._engine = engine
@@ -41,6 +41,7 @@ class TimeView(QtWidgets.QGraphicsView):
 
 
 class TrackScene(QtWidgets.QGraphicsScene):
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -94,14 +95,6 @@ class TrackScene(QtWidgets.QGraphicsScene):
                 painter.drawLine(rect.left(), y, rect.right(), y)
 
         super().drawBackground(painter, rect)
-
-    def setSceneRect(self, rect):
-        #print('[TrackScene]', 'setSceneRect', rect)
-        # make sure the top is -self._timeline_height
-        #timeline_height = self.parent().getTimelineHeight()
-        #rect.setTop(-timeline_height)
-        super().setSceneRect(rect)
-
 
 class TrackView(QtWidgets.QWidget):
     def __init__(self, section_view, timeline_view, *args,
@@ -166,7 +159,7 @@ class TrackView(QtWidgets.QWidget):
         self._instruments[instrumentID].track.setTrack(track)
 
     def buildSections(self, instrumentID):
-        #print('[TrackView2]', 'drawSections', instrumentID)
+        #print('[TrackView]', 'buildSections', instrumentID)
 
         instrument = self._instruments[instrumentID]
         track = instrument.track
@@ -305,8 +298,11 @@ class SectionBox(QtWidgets.QGraphicsItem):
         self._bar_width = self._track_view.getBarWidth()
         self._y = self.instrument.id_ * self._track_view.getInstrumentHeight()
 
-        hue = (self.section.id_ * 0.16) % 1.0
-        r, g, b = hsv_to_rgb(hue, 0.8, 0.5)
+        if self.section.type_ == 'fixed':
+            r = g = b = 0.3
+        else:
+            hue = (self.section.id_ * 0.16) % 1.0
+            r, g, b = hsv_to_rgb(hue, 0.8, 0.5)
         hex_color = f'#{hex(int(r*255))[2:]}{hex(int(g*255))[2:]}{hex(int(b*255))[2:]}'
         self._section_color = QtGui.QColor(hex_color)
 
@@ -370,7 +366,7 @@ class SectionBox(QtWidgets.QGraphicsItem):
             x = i*self._bar_width
             if i%self.section.params['length'] == 0 and self.section.params['loop_num'] > 1:
                 painter.drawLine(x, 0, x, height)
-            elif (i+self.section.params['loop_alt_len']) % self.section.params['length'] == 0 \
+            elif self.section.type_ == 'ai' and (i+self.section.params['loop_alt_len']) % self.section.params['length'] == 0 \
                  and self.section.params['loop_num'] > 1:
                 painter.drawLine(x, 5, x, height)
                 painter.drawLine(x, 5, x+self.section.params['loop_alt_len']*self._bar_width, 5)
@@ -450,6 +446,7 @@ class SectionBox(QtWidgets.QGraphicsItem):
 
 
 class SectionParameters(QtWidgets.QFrame):
+
     def __init__(self, engine, track_view=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -478,13 +475,23 @@ class SectionParameters(QtWidgets.QFrame):
         parameter_layout.addWidget(self._section_name, 0, 0, 1, 7)
         parameter_layout.setRowStretch(0, 0.5)
 
-        parameter_layout.addWidget(self.actionBox(), 1, 0, 3, 1)
-        parameter_layout.addWidget(self.playbackBox(), 1, 1, 3, 1)
-        parameter_layout.addWidget(self.structureBox(), 1, 2, 3, 1)
-        parameter_layout.addWidget(self.leadBox(), 1, 3, 3, 1)
-        parameter_layout.addWidget(self.sampleBox(), 1, 4, 3, 1)
-        parameter_layout.addWidget(self.injectionBox(), 1, 5, 3, 1)
-        parameter_layout.addWidget(self.metaBox(), 1, 6, 3, 1)
+        self._boxes = {
+            'action': self.actionBox(),
+            'playback': self.playbackBox(),
+            'structure': self.structureBox(),
+            'lead': self.leadBox(),
+            'sample': self.sampleBox(),
+            'injection': self.injectionBox(),
+            'meta': self.metaBox()
+        }
+
+        parameter_layout.addWidget(self._boxes['action'], 1, 0, 3, 1)
+        parameter_layout.addWidget(self._boxes['playback'], 1, 1, 3, 1)
+        parameter_layout.addWidget(self._boxes['structure'], 1, 2, 3, 1)
+        parameter_layout.addWidget(self._boxes['lead'], 1, 3, 3, 1)
+        parameter_layout.addWidget(self._boxes['sample'], 1, 4, 3, 1)
+        parameter_layout.addWidget(self._boxes['injection'], 1, 5, 3, 1)
+        parameter_layout.addWidget(self._boxes['meta'], 1, 6, 3, 1)
 
         self.lead = self.parameters['lead']
         self.length = self.parameters['length']
@@ -497,7 +504,6 @@ class SectionParameters(QtWidgets.QFrame):
             p.setMinimumWidth(60)
             if isinstance(p, QtWidgets.QComboBox):
                 p.view().setMinimumWidth(p.minimumSizeHint().width())
-
 
         parameter_layout.setColumnStretch(10, 2)
         self.setLayout(parameter_layout)
@@ -738,10 +744,8 @@ class SectionParameters(QtWidgets.QFrame):
         self._section_name.setStyleSheet(style_sheet)
 
         params = self._section.params
-
         for k, v in params.items():
             if k not in self.parameters:
-                #print(k, v)
                 continue
 
             self.parameters[k].blockSignals(True)
@@ -755,6 +759,14 @@ class SectionParameters(QtWidgets.QFrame):
                 self.parameters[k].setValue(v)
 
             self.parameters[k].blockSignals(False)
+
+        if self._section.type_ == 'fixed':
+            for b in ('structure', 'lead', 'sample', 'injection', 'meta'):
+                self._boxes[b].hide()
+            return
+        else:
+            for b in self._boxes.values():
+                b.show()
 
         self.lead.blockSignals(True)
         self.lead.clear()
@@ -971,7 +983,7 @@ class SectionView(QtWidgets.QWidget):
 
         self.section_layout = QtWidgets.QStackedLayout()
 
-        null_view = QtWidgets.QLabel('No section selected...')
+        null_view = QtWidgets.QLabel('No SECTION selected')
         null_view.setLayout(QtWidgets.QHBoxLayout())
         self.section_layout.insertWidget(0, null_view)
 
@@ -989,18 +1001,3 @@ class SectionView(QtWidgets.QWidget):
             self.section_layout.setCurrentIndex(1)
         else:
             self.section_layout.setCurrentIndex(0)
-
-
-#if __name__ == '__main__':
-#    app = QtWidgets.QApplication([])
-#
-#    style = QtCore.QFile('./darkStyle.stylesheet')
-#    style.open(QtCore.QFile.ReadOnly | QtCore.QFile.Text)
-#    stream = QtCore.QTextStream(style)
-#    app.setStyleSheet(stream.readAll())
-#
-#    section = InstrumentPanel()
-#    #section.setFixedHeight(90)
-#    section.show()
-#
-#    app.exec_()
