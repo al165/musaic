@@ -641,11 +641,17 @@ class SectionParameters(QtWidgets.QFrame):
         self.parameters['sample_mode'].currentIndexChanged.connect(self.parameterChanged)
         sample_layout.addWidget(self.parameters['sample_mode'])
 
-        self.parameters['chord_mode'] = QtWidgets.QSpinBox()
-        self.parameters['chord_mode'].setRange(0, 4)
-        self.parameters['chord_mode'].setSpecialValueText('auto')
-        self.parameters['chord_mode'].setToolTip('Chord mode')
-        self.parameters['chord_mode'].valueChanged.connect(self.parameterChanged)
+        self.parameters['chord_mode'] = QtWidgets.QComboBox()
+        self.parameters['chord_mode'].addItems(['auto', 'force', '1', '2', '3', '4'])
+        self.parameters['chord_mode'].setToolTip("Chord mode: let AI 'auto' choose when to make chords, 'force' to make all chords, or a max number of notes to play at once")
+        self.parameters['chord_mode'].setCurrentText('auto')
+        self.parameters['chord_mode'].currentIndexChanged.connect(self.parameterChanged)
+
+        #self.parameters['chord_mode'] = QtWidgets.QSpinBox()
+        #self.parameters['chord_mode'].setRange(0, 4)
+        #self.parameters['chord_mode'].setSpecialValueText('auto')
+        #self.parameters['chord_mode'].setToolTip('Chord mode')
+        #self.parameters['chord_mode'].valueChanged.connect(self.parameterChanged)
         sample_layout.addWidget(self.parameters['chord_mode'])
 
         return sample_box
@@ -750,8 +756,8 @@ class SectionParameters(QtWidgets.QFrame):
 
             self.parameters[k].blockSignals(True)
 
-            if k in {'lead_mode', 'sample_mode', 'context_mode'}:
-                self.parameters[k].setCurrentText(v)
+            if k in {'lead_mode', 'sample_mode', 'context_mode', 'chord_mode'}:
+                self.parameters[k].setCurrentText(str(v))
             elif k == 'lead':
                 index = self.parameters['lead'].findData(v)
                 self.parameters[k].setCurrentIndex(index)
@@ -843,7 +849,7 @@ class SectionParameters(QtWidgets.QFrame):
         print('[SectionParameters]', 'parameterChanged')
         params = dict()
         for k, v in self.parameters.items():
-            if k in {'lead_mode', 'context_mode', 'sample_mode'}:
+            if k in {'lead_mode', 'context_mode', 'sample_mode', 'chord_mode'}:
                 params[k] = v.currentText()
                 #print(k, v.currentText())
             elif k == 'lead':

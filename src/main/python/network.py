@@ -26,13 +26,6 @@ if PLAYER != RANDOM:
     from v9.Nets.MetaPredictor import MetaPredictor
     from v9.Nets.CombinedNetwork import CombinedNetwork
 
-#elif PLAYER == EUROAI:
-#    from euroAI.Nets.ChordNetwork import ChordNetwork
-#    from euroAI.Nets.MetaEmbedding import MetaEmbedding
-#    from euroAI.Nets.MetaPredictor import MetaPredictor
-#    from euroAI.Nets.CombinedNetwork import CombinedNetwork
-
-
 
 class RandomPlayer():
     ''' For testing purpose only! '''
@@ -219,9 +212,11 @@ class NeuralNet():
 
     def sampleOutput(self, output, kwargs):
         mode = kwargs.get('sample_mode', 'dist')
-        chord_num = kwargs.get('chord_mode', 1)
-
-        #print('[NeuralNet]', mode)
+        chord_mode = kwargs.get('chord_mode', 1)
+        if chord_mode in {'force', 'auto'}:
+            chord_num = 1
+        else:
+            chord_num = int(chord_mode)
 
         if mode == 'argmax' or mode == 'best':
             sampledRhythm = np.argmax(output[0], axis=-1)
@@ -323,9 +318,41 @@ class NeuralNet():
             note = (int(nn), startTick, endTick)
             return note
 
+        def predictChord(notes, pc, sample_mode, melodyContext, metaData):
+            values = []
+            for k in sorted(metaData.keys()):
+                if k == 'ts':
+                    values.extend([4, 4])
+                else:
+                    values.append(metaData[k])
+            md = np.tile(values, (1, 1))
+
+            chord_outputs = self.chordNet.predict(
+                x=[np.array([[pc]]), np.array([[melodyContext]]), md]
+            )
+            if sample_mode == 'dist' or sample_mode == 'top':
+                chord = rand.choice(len(chord_outputs[0]), p=chord_outputs[0])
+            else:
+                chord = np.argmax(chord_outputs[0], axis=-1)
+
+            intervals = self.chordDict[chord]
+            for interval in intervals:
+                notes.append(makeNote(pc+interval-12, tick, endTick))
+
+            return notes
+
+
+        if 'meta_data' not in kwargs or kwargs['meta_data'] == None:
+            kwargs['meta_data'] = deepcopy(DEFAULT_META_DATA)
+
         notes = []
         onTicks = [False] * 96
-        chord_num = kwargs.get('chord_mode', 1)
+
+        chord_mode = kwargs.get('chord_mode', 1)
+        if chord_mode not in {'force', 'auto'}:
+            chord_mode = int(chord_mode)
+
+        sample_mode = kwargs.get('sample_mode', 'top')
 
         for i, beat in enumerate(rhythmContext):
             b = self.rhythmDict[beat]
@@ -341,36 +368,17 @@ class NeuralNet():
                 endTick = 96
             pc = melodyContext[i//2]
 
-            if chord_num == 0:
+            if chord_mode == 'force':
+                tonic = 12 + (pc % 12)
+                notes = predictChord(notes, tonic, sample_mode, melodyContext, kwargs['meta_data'])
+            elif chord_mode == 0:
                 if pc >= 12:
                     # draw chord intervals...
-                    if 'meta_data' not in kwargs or kwargs['meta_data'] == None:
-                        kwargs['meta_data'] = deepcopy(DEFAULT_META_DATA)
-
-                    values = []
-                    for k in sorted(kwargs['meta_data'].keys()):
-                        if k == 'ts':
-                            values.extend([4, 4])
-                        else:
-                            values.append(kwargs['meta_data'][k])
-                    md = np.tile(values, (1, 1))
-
-                    chord_outputs = self.chordNet.predict(
-                        x=[np.array([[pc]]), np.array([[melodyContext]]), md]
-                    )
-                    if kwargs['sample_mode'] == 'dist' or kwargs['sample_mode'] == 'top':
-                        chord = rand.choice(len(chord_outputs[0]), p=chord_outputs[0])
-                    else:
-                        chord = np.argmax(chord_outputs[0], axis=-1)
-
-                    intervals = self.chordDict[chord]
-                    for interval in intervals:
-                        notes.append(makeNote(pc+interval-12, tick, endTick))
-
+                    notes = predictChord(notes, pc, sample_mode, melodyContext, kwargs['meta_data'])
                 else:
                     notes.append(makeNote(pc, tick, endTick))
 
-            elif chord_num == 1:
+            elif chord_mode == 1:
                 notes.append(makeNote(pc, tick, endTick))
             else:
                 for chord_pc in chordContexts[i//2]:
