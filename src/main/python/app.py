@@ -55,7 +55,7 @@ class MediaPlayer(multiprocessing.Process):
         self.midi = False
         self.port = None
 
-        mido.set_backend('mido.backends.pygame')
+        #mido.set_backend('mido.backends.pygame')
 
     def run(self):
         while not self.stopRequest.is_set():
