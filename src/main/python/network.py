@@ -15,7 +15,7 @@ import numpy.random as rand
 from core import DEFAULT_SECTION_PARAMS, DEFAULT_AI_PARAMS, DEFAULT_META_DATA
 
 RANDOM = 0
-NEURAL = 1
+VER_9 = 1
 EUROAI = 2
 
 PLAYER = 2
@@ -50,7 +50,7 @@ class NeuralNet():
         startTime = time.time()
 
         if resources_path:
-            if PLAYER == NEURAL:
+            if PLAYER == VER_9:
                 trainingsDir = resources_path + '/v9_lead/'
             elif PLAYER == EUROAI:
                 trainingsDir = resources_path + '/euroAI_lead/'
@@ -59,7 +59,7 @@ class NeuralNet():
 
 
         else:
-            if PLAYER == NEURAL:
+            if PLAYER == VER_9:
                 trainingsDir = os.path.dirname(os.path.abspath(__file__)) + '/v9/Trainings/v9_lead'
             elif PLAYER == EUROAI:
                 trainingsDir = os.path.dirname(os.path.abspath(__file__)) + '/v9/Trainings/euroAI_lead'
@@ -402,7 +402,7 @@ class NetworkEngine(multiprocessing.Process):
 
     def run(self):
         if not self.network:
-            if PLAYER == NEURAL or PLAYER == EUROAI:
+            if PLAYER == VER_9 or PLAYER == EUROAI:
                 self.network = NeuralNet(resources_path=self.resources_path)
             elif PLAYER == EUROAI:
                 self.network = RandomPlayer()

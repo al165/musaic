@@ -1,5 +1,8 @@
-keras
-tensorflow
-pyqt5==5.9.2
-mido
+tensorflow<=1.14
+pyqt5<=5.9.2
+keras<3.0
 python-osc
+rtmidi
+numpy
+mido
+fbs
