@@ -18,7 +18,7 @@ RANDOM = 0
 VER_9 = 1
 EUROAI = 2
 
-PLAYER = 2
+PLAYER = 0
 
 if PLAYER != RANDOM:
     from v9.Nets.ChordNetwork import ChordNetwork
@@ -404,7 +404,7 @@ class NetworkEngine(multiprocessing.Process):
         if not self.network:
             if PLAYER == VER_9 or PLAYER == EUROAI:
                 self.network = NeuralNet(resources_path=self.resources_path)
-            elif PLAYER == EUROAI:
+            elif PLAYER == RANDOM:
                 self.network = RandomPlayer()
             #print('[NetworkEngine]', 'network loaded')
 

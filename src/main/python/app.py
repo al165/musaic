@@ -5,6 +5,7 @@ import json
 import threading
 import multiprocessing
 
+import jack
 from pythonosc import udp_client
 import mido
 from mido import Message, MidiFile, MidiTrack, MetaMessage
@@ -55,6 +56,17 @@ class MediaPlayer(multiprocessing.Process):
         self.midi = False
         self.port = None
 
+        self.jack = True
+        self.jackClient = None
+
+        if self.jack:
+            try:
+                self.jackClient = jack.Client("musAIc")
+            except:
+                print('[MediaPlayer]', 'failed to create JACK client')
+                self.jack = False
+
+
         #mido.set_backend('mido.backends.pygame')
 
     def run(self):
@@ -66,7 +78,6 @@ class MediaPlayer(multiprocessing.Process):
                 # --- Before measure starts
                 print('[MediaPlayer]', 'Bar', self.clockVar[0])
 
-                # BPM=80
                 tickTime = (60/self.bpm)/24
 
                 # measures = (instrumentID, {tick: [midiMessages]})
@@ -105,6 +116,8 @@ class MediaPlayer(multiprocessing.Process):
                 if self.clockVar[2] == 0:
                     print('[MediaPlayer]', 'stopping...')
                     #self.clockVar[1] = 0
+                    if self.jack:
+                        self.jackClient.transport_stop()
                     self.allOff()
                     self.client.send_message('/clockStop', 1)
                     self.stopping = False
@@ -119,6 +132,8 @@ class MediaPlayer(multiprocessing.Process):
         if self.port:
             self.port.reset()
             self.port.close()
+        if self.jackClient:
+            self.jackClient.close()
         super(MediaPlayer, self).join(timeout)
 
     def sendOut(self, msg):
@@ -187,6 +202,17 @@ class MediaPlayer(multiprocessing.Process):
 
         if n != None:
             self.clockVar[0] = n
+
+        if self.jack:
+            status, position = self.jackClient.transport_query()
+            if 'beats_per_minute' in position:
+                self.bpm = position['beats_per_minute']
+
+            measures_per_second = 4 * self.bpm/60
+            location = int(position['frame_rate'] * measures_per_second * self.clockVar[0])
+            self.jackClient.transport_locate(location)
+            self.jackClient.transport_start()
+
         self.clockVar[2] = 1
         self.client.send_message('/clockStart', 1)
         self.playing.set()

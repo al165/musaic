@@ -452,7 +452,7 @@ class SectionBase:
             else:
                 print('    (WARNING: not serializable)')
 
-        self.flattenMeasures()
+        #self.flattenMeasures()
 
         if 'transpose_octave' in kwargs:
             #print('[Section]', 'updated section octave', kwargs['transpose_octave'])
@@ -568,8 +568,10 @@ class AISection(SectionBase):
 
     def __init__(self, name, id_, **kwargs):
         self.altEnds = [[]]
-        super().__init__(name, id_, **kwargs)
+        #for _ in range(kwargs.get('loop_alt_num', 1)):
+        #    self.altEnds.append([self.newMeasure() for _ in range(len(self.mainMeasures) - 1)])
 
+        super().__init__(name, id_, **kwargs)
         self.type_ = 'ai'
 
     def changeParameter(self, **kwargs):
@@ -584,15 +586,18 @@ class AISection(SectionBase):
 
         self.altEnds[0] = self.mainMeasures[1:]
         # first make sure there are at least the correct number of alternative endings..
-        for _ in range(max(0, self.params['loop_alt_num'] - len(self.altEnds))):
-            altEnd = [self.newMeasure() for _ in range(self.params['loop_alt_num'])]
-            self.altEnds.append(altEnd)
+        #for _ in range(max(0, self.params['loop_alt_num'] - len(self.altEnds))):
+        #    altEnd = [self.newMeasure() for _ in range(self.params['loop_alt_num'])]
+        #    self.altEnds.append(altEnd)
+        while len(self.altEnds) < self.params['loop_alt_num']:
+            self.altEnds.append([self.newMeasure() for _ in range(len(self.mainMeasures) - 1)])
 
         # then make sure each alternative end is long enough..
         for i in range(1, len(self.altEnds)):
-            for _ in range(max(0, self.params['loop_alt_len'] - len(self.altEnds[i]))):
-                self.altEnds[i].append(self.newMeasure())
+            n = max(0, len(self.mainMeasures) - 1 - len(self.altEnds[i]))
+            self.altEnds[i] = [self.newMeasure() for _ in range(n)] + self.altEnds[i]
 
+        self.flattenMeasures()
 
 
     def flattenMeasures(self):
@@ -602,11 +607,6 @@ class AISection(SectionBase):
 
         lenMainMeasures = length - lenAlts
 
-        #main = forceListLength(self.mainMeasures, lenMainMeasures)
-
-        while len(self.mainMeasures) < lenMainMeasures:
-            self.mainMeasures.append(self.newMeasure())
-
         main = self.mainMeasures[:lenMainMeasures]
 
         track = [None] * (length*self.params['loop_num'])
@@ -614,7 +614,9 @@ class AISection(SectionBase):
         for i in range(self.params['loop_num']):
             track[i*length:i*length+lenMainMeasures] = main
             if lenAlts > 0:
-                altEnd = self.altEnds[i%numAlts][-lenAlts:]
+                #print('[AI Section]', self.id_, lenAlts, len(self.altEnds), i%numAlts, self.altEnds)
+                start = self.params['length'] - self.params['loop_alt_len'] - 1
+                altEnd = self.altEnds[i%numAlts][start:start + self.params['loop_alt_len']]
                 track[i*length+lenMainMeasures:i*length+length] = altEnd
 
         self.flatMeasures = track
