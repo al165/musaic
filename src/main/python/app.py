@@ -4,6 +4,7 @@ import time
 import json
 import threading
 import multiprocessing
+from collections import defaultdict
 
 import jack
 from pythonosc import udp_client
@@ -51,13 +52,18 @@ class MediaPlayer(multiprocessing.Process):
         self.stopRequest = multiprocessing.Event()
         self.playing = multiprocessing.Event()
         self.stopping = False
+        self.started = False
 
         self.osc = True
-        self.midi = False
+        self.midi = True
         self.port = None
 
         self.jack = True
         self.jackClient = None
+
+        # {channel: {note}}
+        self.noteOns = defaultdict(set)
+
 
         if self.jack:
             try:
@@ -74,9 +80,21 @@ class MediaPlayer(multiprocessing.Process):
 
             self.checkMessages()
 
+
             if self.playing.is_set():
+                # --- Starting playback
+                if not self.started:
+                    print('[MediaPlayer]', 'Starting playback')
+                    self.started = True
+                    print(self.midi, self.sendMidiClock, self.port)
+                    if self.midi and self.sendMidiClock and self.port:
+                        print('start message')
+                        self.port.send(mido.Message('start'))
+                    else:
+                        print('Port not found!!')
+
                 # --- Before measure starts
-                print('[MediaPlayer]', 'Bar', self.clockVar[0])
+                print('[MediaPlayer]', 'Bar', self.clockVar[0], self.port)
 
                 tickTime = (60/self.bpm)/24
 
@@ -93,6 +111,9 @@ class MediaPlayer(multiprocessing.Process):
                     if self.sendOscClock and self.osc:
                         self.client.send_message('/clock', tick)
                     self.clockVar[1] = tick
+
+                    if self.sendMidiClock and self.midi and self.port:
+                        self.port.send(mido.Message('clock'))
 
                     for measure in measures:
                         id_ = measure[0]
@@ -118,10 +139,13 @@ class MediaPlayer(multiprocessing.Process):
                     #self.clockVar[1] = 0
                     if self.jack:
                         self.jackClient.transport_stop()
+                    if self.midi and self.port:
+                        print('stopping MIDI')
+                        self.port.send(mido.Message('stop'))
                     self.allOff()
                     self.client.send_message('/clockStop', 1)
                     self.stopping = False
-
+                    self.started = False
 
             else:
                 time.sleep(0.1)
@@ -142,6 +166,14 @@ class MediaPlayer(multiprocessing.Process):
 
         if self.midi and self.port:
             self.port.send(msg)
+
+        if msg.type == 'note_on':
+            self.noteOns[msg.channel].add(msg.note)
+        elif msg.type == 'note_off':
+            try:
+                self.noteOns[msg.channel].remove(msg.note)
+            except KeyError:
+                pass
 
     def checkMessages(self):
         try:
@@ -185,7 +217,7 @@ class MediaPlayer(multiprocessing.Process):
                     if self.port:
                         self.port.panic()
                         self.port.close()
-                    self.port = mido.open_output(data[0], client_name="musAIc")
+                    self.port = mido.open_output(data[0])
                 elif mType == 'midi_out':
                     self.midi = data[0]
                 elif mType == 'osc_out':
@@ -199,6 +231,8 @@ class MediaPlayer(multiprocessing.Process):
     def setPlaying(self, n=None):
         if self.playing.is_set():
             return
+
+        self.checkMessages()
 
         if n != None:
             self.clockVar[0] = n
@@ -215,6 +249,8 @@ class MediaPlayer(multiprocessing.Process):
 
         self.clockVar[2] = 1
         self.client.send_message('/clockStart', 1)
+
+
         self.playing.set()
 
     def setStop(self):
@@ -226,8 +262,16 @@ class MediaPlayer(multiprocessing.Process):
         #print('[MediaPlayer]', 'allOff')
         if self.client and self.osc:
             self.client.send_message('/panic', 0)
-        if self.port and self.midi:
-            self.port.panic()
+        if self.port:
+            self.port.panic() # doesn't work??
+        print('[MediaPlayer]', 'allOff')
+        for chan in self.noteOns.keys():
+            notes = list(self.noteOns[chan])
+            for note in notes:
+                print(note, chan)
+                self.sendOut(mido.Message('note_off', channel=chan, note=note))
+
+        self.noteOns = defaultdict(set)
 
 
 class Engine(threading.Thread):

@@ -191,6 +191,7 @@ class Measure:
 
     def setChan(self, chan):
         self.chan = chan
+        self.call()
         #self.MidiEvents = self.getMidiEvents()
 
     def setEmpty(self):
@@ -850,6 +851,7 @@ class Instrument:
         self.track.flattenMeasures()
 
     def changeChannel(self, newChan):
+        self.chan = newChan
         for section in self.sections.values():
             section.changeParameter(chan=newChan)
 
