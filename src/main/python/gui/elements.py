@@ -16,37 +16,72 @@ DEFAULT_BAR_WIDTH = 80
 
 class TimeView(QtWidgets.QGraphicsView):
 
-    def __init__(self, engine, *args, **kwargs):
+    def __init__(self, engine, scroll_bar, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._engine = engine
+        self._scroll_bar = scroll_bar
+
+        self._mouseStartX = None
+
+        self.setViewportUpdateMode(QtWidgets.QGraphicsView.BoundingRectViewportUpdate)
 
     def mousePressEvent(self, e):
-        #print('[TimeView]', 'mousePressEvent', e)
         scene = self.scene()
         if not scene:
             return
-        bar_width = scene.parent().getBarWidth()
-        bar_num = int(self.mapToScene(e.x(), e.y()).x()//bar_width)
-        self._engine.setBarNumber(bar_num)
+
+        self._mouseStartX = self.mapToScene(e.x(), e.y()).x()
+
+    def mouseMoveEvent(self, e):
+        #print('[TimeView]', 'mouse move event')
+        if not self.scene() or not self._mouseStartX:
+            return
+
+        mouseEndX = self.mapToScene(e.x(), e.y()).x()
+        bar_width = self.scene().parent().getBarWidth()
+
+        if abs(mouseEndX - self._mouseStartX) > 20:
+            # dragging...
+            start = min(self._mouseStartX, mouseEndX)
+            end = max(self._mouseStartX, mouseEndX)
+            start_bar_num = int(start//bar_width)
+            end_bar_num = 1 + int(end//bar_width)
+            self._engine.setLoopBounds(start_bar_num, end_bar_num)
+
+    def mouseReleaseEvent(self, e):
+        if not self.scene() or not self._mouseStartX:
+            return
+
+        mouseEndX = self.mapToScene(e.x(), e.y()).x()
+        bar_width = self.scene().parent().getBarWidth()
+
+        if abs(mouseEndX - self._mouseStartX) > 20:
+            self._mouseStartX = None
+        else:
+            bar_num = int(mouseEndX//bar_width)
+            self._engine.setBarNumber(bar_num)
+
 
     def wheelEvent(self, e):
         #print('[TimeView]', e.angleDelta().y())
+        x_before = self.mapToScene(e.x(), e.y()).x()
 
         if e.angleDelta().y() > 0:
             # zoom out...
-            self.scene().parent().zoom(-1)
+            self.scene().parent().zoom(-1, x_before)
         else:
             # zoom in...
-            self.scene().parent().zoom(1)
+            self.scene().parent().zoom(1, x_before)
 
 
 class TrackScene(QtWidgets.QGraphicsScene):
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, engine, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self._engine = engine
 
     def drawBackground(self, painter, rect):
-        #print('[TrackScene]', 'drawBackground()')
+        print('[TrackScene]', 'drawBackground()', rect)
         scene_rect = self.parent().getSceneRect()
 
         bar_width = self.parent().getBarWidth()
@@ -57,13 +92,29 @@ class TrackScene(QtWidgets.QGraphicsScene):
         brush.setColor(QtGui.QColor('#151515'))
         painter.fillRect(rect, brush)
 
-        line_pen = QtGui.QPen(QtGui.QColor('#333333'), 1, Qt.SolidLine)
+        line_pen = QtGui.QPen(QtGui.QColor('#404040'), 1, Qt.SolidLine)
         painter.setPen(line_pen)
 
         width = max(painter.device().width(), scene_rect.width())
         height = scene_rect.height()
         num_bars = width//bar_width + 1
         num_ins = height//instrument_height + 1
+
+        # draw loop bounds...
+        brush = QtGui.QBrush()
+        brush.setStyle(Qt.SolidPattern)
+
+        loop = self._engine.loop
+        if loop['loop']:
+            brush.setColor(QtGui.QColor('#202025'))
+        else:
+            #brush.setStyle(Qt.Dense2Pattern)
+            brush.setColor(QtGui.QColor('#1B1B1B'))
+
+        start = loop['start'] * bar_width
+        loop_width = (loop['end'] - loop['start']) * bar_width
+        bounds_rect = QtCore.QRect(start, rect.top()-20, loop_width, rect.bottom()+20)
+        painter.fillRect(bounds_rect, brush)
 
         # draw vertical lines...
         if bar_width <= 10:
@@ -96,8 +147,15 @@ class TrackScene(QtWidgets.QGraphicsScene):
 
         super().drawBackground(painter, rect)
 
-class TrackView(QtWidgets.QWidget):
-    def __init__(self, section_view, timeline_view, *args,
+    #def drawForeground(self, painter, rect):
+    #    print('[TrackScene]', 'drawForegound')
+
+    #    bar_width = self.parent().getBarWidth()
+
+
+
+class TrackPanel(QtWidgets.QWidget):
+    def __init__(self, engine, section_view, timeline_view, *args,
                  instrument_panel_height=120, timeline_height=20, **kwargs):
 
         super().__init__(*args, **kwargs)
@@ -112,13 +170,13 @@ class TrackView(QtWidgets.QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
 
         self._bar_width = DEFAULT_BAR_WIDTH
-        self._track_scene = TrackScene(0.0, 0.0, 1000.0, 1000.0, self)
+        self._track_scene = TrackScene(engine, 0.0, 0.0, 1000.0, 1000.0, self)
         self._track_scene.selectionChanged.connect(self.newSelection)
 
         self._track_view = QtWidgets.QGraphicsView(self._track_scene)
-        self._track_view.setCacheMode(QtWidgets.QGraphicsView.CacheBackground)
         self._track_view.setAlignment(Qt.AlignTop | Qt.AlignLeft)
-        self._track_view.setViewportUpdateMode(QtWidgets.QGraphicsView.SmartViewportUpdate)
+        self._track_view.setViewportUpdateMode(QtWidgets.QGraphicsView.BoundingRectViewportUpdate)
+        #self._track_view.setViewportUpdateMode(QtWidgets.QGraphicsView.SmartViewportUpdate)
         self._track_view.setMinimumWidth(1000)
         layout.addWidget(self._track_view)
 
@@ -218,6 +276,7 @@ class TrackView(QtWidgets.QWidget):
         for ins in self._instruments.values():
             x = max(x, len(ins.track))
         x *= self._bar_width
+        x = max(x, 1000)
         y = len(self._instruments.values()) * self._instrument_panel_height
         self._track_cursor.setLine(0.0, -self._timeline_height, 0.0, y+self._timeline_height)
         return QtCore.QRectF(0, 0, x, y)
@@ -242,13 +301,20 @@ class TrackView(QtWidgets.QWidget):
 
         self.updateRects()
         self._track_scene.update()
-        self._track_view.update()
 
-    def zoom(self, factor):
+    def zoom(self, factor, x_before):
+        #self._track_view.centerOn(where/self._bar_width, 0)
+        t = x_before/self._bar_width
         if factor > 0:
             self.setBarWidth(self._bar_width+2)
         elif factor < 0:
             self.setBarWidth(self._bar_width-2)
+
+        x_after = t * self._bar_width
+
+        for view in self.scene().views():
+            view.translate(x_after - x_before, 0)
+
 
     def getInstrumentHeight(self):
         return self._instrument_panel_height
@@ -647,11 +713,6 @@ class SectionParameters(QtWidgets.QFrame):
         self.parameters['chord_mode'].setCurrentText('auto')
         self.parameters['chord_mode'].currentIndexChanged.connect(self.parameterChanged)
 
-        #self.parameters['chord_mode'] = QtWidgets.QSpinBox()
-        #self.parameters['chord_mode'].setRange(0, 4)
-        #self.parameters['chord_mode'].setSpecialValueText('auto')
-        #self.parameters['chord_mode'].setToolTip('Chord mode')
-        #self.parameters['chord_mode'].valueChanged.connect(self.parameterChanged)
         sample_layout.addWidget(self.parameters['chord_mode'])
 
         return sample_box

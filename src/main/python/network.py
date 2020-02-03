@@ -169,7 +169,8 @@ class NeuralNet():
                     'eb': [self.rhythmDict[(0.0, 0.5)],
                            self.rhythmDict[(0.5,)]],
                     'fb': [self.rhythmDict[(0.0, 0.25, 0.5, 0.75)],
-                           self.rhythmDict[(0.0, 0.25, 0.5)]],
+                           self.rhythmDict[(0.0, 0.25, 0.5)],
+                           self.rhythmDict[(0.5, 0.75)]],
                     #'tb': [self.rhythmDict[(0.0, 0.3333, 0.6667)]],
                     'tb': [self.rhythmDict[(0.0,)]],
                 }[rhythmType])
@@ -245,7 +246,7 @@ class NeuralNet():
             sampledRhythm = np.array([r])
             m = []
 
-            for i in range(len(output[1][0][0])):
+            for i in range(len(output[1][0])):
                 top5_m_indices = np.argsort(output[1][0][i], axis=-1)[-5:]
                 m_probs = output[1][0][i][top5_m_indices]
                 m_probs /= sum(m_probs)
@@ -255,7 +256,7 @@ class NeuralNet():
                                                        replace=True, size=chord_num)))
             sampledMelody = np.array([m])
 
-        #print(sampledRhythm, sampledMelody, sampledChords)
+        #print('[NeuralNet]', sampledRhythm.shape, sampledMelody.shape)
         return sampledRhythm, sampledMelody, sampledChords
 
     def convertBarToContext(self, measure):

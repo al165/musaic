@@ -4,7 +4,7 @@ from fbs_runtime.application_context.PyQt5 import ApplicationContext
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import Qt
 
-from gui.elements import InstrumentPanel, TrackView, TimeView, SectionView
+from gui.elements import InstrumentPanel, TrackPanel, TimeView, SectionView
 from app import Engine
 
 
@@ -130,6 +130,15 @@ class MainWindow(QtWidgets.QMainWindow):
         play.clicked.connect(self.engine.startPlaying)
         controls_layout.addWidget(play)
 
+        loop = QtWidgets.QPushButton()
+        loop.setText(' loop ')
+        loop.setCheckable(True)
+        loop.clicked[bool].connect(self.engine.setLoopPlayback)
+        sp = QtWidgets.QSizePolicy()
+        sp.setHorizontalStretch(1)
+        loop.setSizePolicy(sp)
+        controls_layout.addWidget(loop)
+
         stop = QtWidgets.QPushButton('stop')
         stop.clicked.connect(self.engine.stopPlaying)
         controls_layout.addWidget(stop)
@@ -183,7 +192,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._instrument_layout.addWidget(instrument_scroll_panel, 2, 0)
 
-        timeline_view = TimeView(self.engine)
+        timeline_view = TimeView(self.engine, horizontal_scroll)
         timeline_view.setFixedHeight(TIMELINE_HEIGHT)
         timeline_view.setHorizontalScrollBar(horizontal_scroll)
         timeline_view.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -192,7 +201,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._instrument_layout.addWidget(timeline_view, 1, 1)
 
         self._instrument_panels = []
-        self._track_view = TrackView(section_view, timeline_view,
+        self._track_view = TrackPanel(self.engine, section_view, timeline_view,
                                       instrument_panel_height=INS_PANEL_HEIGHT,
                                       timeline_height=TIMELINE_HEIGHT)
         self._track_view.setMinimumHeight(INS_PANEL_HEIGHT)

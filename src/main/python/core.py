@@ -105,8 +105,8 @@ class Measure:
         for n in notes:
             if n[0] > 0:
                 vel = randint(*self.velocityRange)
-                onMsg = FrozenMessage('note_on', channel=self.chan, note = n[0], velocity=vel)
-                offMsg = FrozenMessage('note_off', channel=self.chan, note = n[0], velocity=vel)
+                onMsg = FrozenMessage('note_on', channel=self.chan-1, note = n[0], velocity=vel)
+                offMsg = FrozenMessage('note_off', channel=self.chan-1, note = n[0], velocity=vel)
 
                 events[n[1]].append(onMsg)
                 events[n[2]].append(offMsg)
@@ -116,7 +116,7 @@ class Measure:
     def convertMidiEventsToNotes(self, events):
         ''' Returns list of notes (nn, start_tick, end_tick) '''
         #FIXME
-        print('[Measure]', 'convertMidiEventsToNotes')
+        #print('[Measure]', 'convertMidiEventsToNotes')
         notes = []
         #noteTimes = defaultdict(list)
 
@@ -256,7 +256,7 @@ class Track:
         #print(self.track, bar_num, section)
         if bar_num in self.track:
             # TODO: make smarter
-            print('[Track]', idx, 'occupied, appending section to end')
+            #print('[Track]', idx, 'occupied, appending section to end')
             bar_num = len(self)
             #self.insertSection(len(self), section)
             #return
@@ -278,8 +278,6 @@ class Track:
         del self.track[start_time]
         del self.blocks[id_]
         self.flattenMeasures()
-        print(self.flatMeasures)
-        print(self.track)
 
     def getNextBlockID(self):
         x = 0
@@ -445,13 +443,14 @@ class SectionBase:
 
     def changeParameter(self, **kwargs):
         '''Change section parameters.'''
-        print('[SectionBase]', 'change parameters:')
+        #print('[SectionBase]', 'change parameters:')
         for k, v in kwargs.items():
-            print('  ', k, ':', v)
+            #print('  ', k, ':', v)
             if isJSONSerializable(v):
                 self.params[k] = v
             else:
                 print('    (WARNING: not serializable)')
+                pass
 
         #self.flattenMeasures()
 
@@ -685,13 +684,13 @@ class FixedSection(SectionBase):
             t += int(24 * msg.time/tpb)
 
             if msg.type not in {'note_on', 'note_off'}:
-                print('MetaMessage:', t, msg.type)
+                #print('MetaMessage:', t, msg.type)
                 continue
 
             m_num = t // 96
             nn = msg.note
 
-            print(t, nn, msg.type)
+            #print(t, nn, msg.type)
             if msg.type == 'note_on':
                 if nn in noteStart:
                     # assume note released and played again
@@ -711,6 +710,9 @@ class FixedSection(SectionBase):
             end_time = n[2] - (96 * m_num)
             measures[m_num].append((n[0], start_time, end_time))
 
+        if len(measures.keys() == 0):
+            print('[FixedSection]', 'Error: no measures found')
+            return
         # - For each measure, collect the messages and set events...
         num_measures = max(list(measures.keys())) + 1
         #num_measures = (t-1) // 96 + 1
@@ -867,7 +869,7 @@ class Instrument:
         section = self.sections[sectionID]
         sectionStart = self.track.getSectionTimes(sectionID)
         if sectionStart == None:
-            print('[Instrument]', 'section start for', section, 'not found...')
+            print('[Instrument]', 'section start for', sectionID, 'not found...')
             return
         elif section.type_ != 'ai':
             print('[Instrument]', 'section', sectionID, 'is not AI')
@@ -877,13 +879,13 @@ class Instrument:
 
         for i, m in enumerate(section.flatMeasures):
             if not m:
-                print(i, 'm == None')
+                #print(i, 'm == None')
                 continue
             if not gen_all and not m.isEmpty():
-                print(i, 'not gen_all and not m.isEmpty()')
+                #print(i, 'not gen_all and not m.isEmpty()')
                 continue
             if m.genRequestSent:
-                print(i, 'm.genRequestSent')
+                #print(i, 'm.genRequestSent')
                 continue
 
             request = {**DEFAULT_SECTION_PARAMS, **DEFAULT_AI_PARAMS, **section.params}

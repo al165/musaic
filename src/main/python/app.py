@@ -6,7 +6,11 @@ import threading
 import multiprocessing
 from collections import defaultdict
 
-import jack
+try:
+    import jack
+except ImportError:
+    jack = None
+
 from pythonosc import udp_client
 import mido
 from mido import Message, MidiFile, MidiTrack, MetaMessage
@@ -27,7 +31,8 @@ def convertMidiToOsc(msg):
     return (msg.type, (msg.channel, msg.note, msg.velocity))
 
 
-class MediaPlayer(multiprocessing.Process):
+class MediaPlayer(threading.Thread):
+#class MediaPlayer(multiprocessing.Process):
     '''Server that plays tracks, either MIDI or OSC type.'''
 
     def __init__(self, msgQueue, clockVar):
@@ -54,6 +59,12 @@ class MediaPlayer(multiprocessing.Process):
         self.stopping = False
         self.started = False
 
+        self.loop = {
+            'loop': False,
+            'start': 0,
+            'end': 12
+        }
+
         self.osc = True
         self.midi = True
         self.port = None
@@ -64,7 +75,6 @@ class MediaPlayer(multiprocessing.Process):
         # {channel: {note}}
         self.noteOns = defaultdict(set)
 
-
         if self.jack:
             try:
                 self.jackClient = jack.Client("musAIc")
@@ -73,13 +83,10 @@ class MediaPlayer(multiprocessing.Process):
                 self.jack = False
 
 
-        #mido.set_backend('mido.backends.pygame')
-
     def run(self):
         while not self.stopRequest.is_set():
 
             self.checkMessages()
-
 
             if self.playing.is_set():
                 # --- Starting playback
@@ -108,9 +115,11 @@ class MediaPlayer(multiprocessing.Process):
 
                 # --- During measure
                 for tick in range(24 * 4):
+                    with self.clockVar:
+                        self.clockVar[1] = tick
+
                     if self.sendOscClock and self.osc:
                         self.client.send_message('/clock', tick)
-                    self.clockVar[1] = tick
 
                     if self.sendMidiClock and self.midi and self.port:
                         self.port.send(mido.Message('clock'))
@@ -130,20 +139,31 @@ class MediaPlayer(multiprocessing.Process):
 
                 # --- After measure
                 with self.clockVar.get_lock():
-                    self.clockVar[0] += 1
-                    self.clockVar[1] = 0
+                    next_bar = self.clockVar[0] + 1
+
+                    print('[MediaPlayer]', 'loop:', self.loop, 'next_bar', next_bar)
+                    if self.loop['loop']:
+                        if next_bar >= self.loop['end']:
+                            next_bar = self.loop['start']
+
+                        if self.jack:
+                            self.setJackTransportPosition(next_bar)
+
+                    with self.clockVar:
+                        self.clockVar[0] = next_bar
+                        self.clockVar[1] = 0
 
                 # --- Stopping playback
                 if self.clockVar[2] == 0:
                     print('[MediaPlayer]', 'stopping...')
-                    #self.clockVar[1] = 0
                     if self.jack:
                         self.jackClient.transport_stop()
                     if self.midi and self.port:
                         print('stopping MIDI')
                         self.port.send(mido.Message('stop'))
+                    if self.osc:
+                        self.client.send_message('/clockStop', 1)
                     self.allOff()
-                    self.client.send_message('/clockStop', 1)
                     self.stopping = False
                     self.started = False
 
@@ -187,7 +207,9 @@ class MediaPlayer(multiprocessing.Process):
                     print('[MediaPlayer]', 'Message in wrong format:', msg)
                     continue
 
-                #print(mType, data)
+                if mType != 'midi':
+                    print('[MediaPlayer]', 'New message:', mType, data)
+
                 if mType == 'midi':
                     # recieved midi data...
                     self.instrumentMessages[data[0]] = data[1]
@@ -222,6 +244,8 @@ class MediaPlayer(multiprocessing.Process):
                     self.midi = data[0]
                 elif mType == 'osc_out':
                     self.osc = data[0]
+                elif mType == 'loop':
+                    self.loop = data
                 else:
                     print('[MediaPlayer]', 'Unknown message type:', msg)
 
@@ -234,24 +258,39 @@ class MediaPlayer(multiprocessing.Process):
 
         self.checkMessages()
 
+        start_bar = self.clockVar[0]
         if n != None:
-            self.clockVar[0] = n
+            start_bar = n
+
+        if self.loop['loop']:
+            if self.clockVar[0] < self.loop['start'] or self.clockVar[0] >= self.loop['end']:
+                start_bar = self.loop['start']
+
+        with self.clockVar:
+            self.clockVar[0] = start_bar
+            self.clockVar[2] = 1
 
         if self.jack:
-            status, position = self.jackClient.transport_query()
-            if 'beats_per_minute' in position:
-                self.bpm = position['beats_per_minute']
+            self.setJackTransportPosition(self.clockVar[0])
 
-            measures_per_second = 4 * self.bpm/60
-            location = int(position['frame_rate'] * measures_per_second * self.clockVar[0])
-            self.jackClient.transport_locate(location)
-            self.jackClient.transport_start()
-
-        self.clockVar[2] = 1
-        self.client.send_message('/clockStart', 1)
-
+        if self.osc:
+            self.client.send_message('/clockStart', 1)
 
         self.playing.set()
+
+    def setJackTransportPosition(self, n):
+        if not self.jack:
+            return
+
+        status, position = self.jackClient.transport_query()
+        if 'beats_per_minute' in position:
+            self.bpm = position['beats_per_minute']
+
+        seconds_per_measure = (60 * 4) / self.bpm
+        location = int(position['frame_rate'] * seconds_per_measure * n)
+        self.jackClient.transport_locate(location)
+        self.jackClient.transport_start()
+
 
     def setStop(self):
         self.playing.clear()
@@ -259,12 +298,11 @@ class MediaPlayer(multiprocessing.Process):
         self.clockVar[2] = 0
 
     def allOff(self):
-        #print('[MediaPlayer]', 'allOff')
         if self.client and self.osc:
             self.client.send_message('/panic', 0)
         if self.port:
             self.port.panic() # doesn't work??
-        print('[MediaPlayer]', 'allOff')
+
         for chan in self.noteOns.keys():
             notes = list(self.noteOns[chan])
             for note in notes:
@@ -276,10 +314,10 @@ class MediaPlayer(multiprocessing.Process):
 
 class Engine(threading.Thread):
 
-    def __init__(self, resources_path=None, guiHandle=None, argv=None):
+    def __init__(self, resources_path=None, gui_handle=None, argv=None):
         super(Engine, self).__init__()
 
-        self.guiHandle = guiHandle
+        #self.guiHandle = gui_handle
 
         self.instruments = dict()
         self.instrumentOctave = dict()
@@ -309,6 +347,12 @@ class Engine(threading.Thread):
             'send': False
         }
 
+        self.loop = {
+            'loop': False,
+            'start': 0,
+            'end': 12
+        }
+
         self.setClientOptions(CLIENT_ADDR, CLIENT_PORT, True)
 
         # clock var [bar_num, tick, status]
@@ -324,7 +368,6 @@ class Engine(threading.Thread):
 
         #mido.set_backend('mido.backends.pygame')
         mido.set_backend('mido.backends.rtmidi')
-
 
         self.player.start()
         self.networkEngine.start()
@@ -449,6 +492,19 @@ class Engine(threading.Thread):
                'data': (out,)}
         self.msgQueue.put(msg)
 
+    def setLoopPlayback(self, loop=True):
+        self.loop['loop'] = loop
+        msg = {'type': 'loop',
+               'data': self.loop}
+        self.msgQueue.put(msg)
+
+    def setLoopBounds(self, start, end):
+        self.loop['start'] = start
+        self.loop['end'] = end
+        msg = {'type': 'loop',
+               'data': self.loop}
+        self.msgQueue.put(msg)
+
     def startPlaying(self):
         while not self.msgQueue.empty():
             _ = self.msgQueue.get()
@@ -461,7 +517,8 @@ class Engine(threading.Thread):
     def setBarNumber(self, n):
         if n < 0:
             n = 0
-        self.clockVar[0] = n
+        with self.clockVar:
+            self.clockVar[0] = n
 
     def stopPlaying(self):
         self.player.setStop()
@@ -475,7 +532,12 @@ class Engine(threading.Thread):
 
     def addInstrument(self, **kwargs):
         id_ = len(self.instruments.keys())
-        name = kwargs.get('name', 'INS ' + str(id_))
+        if 'name' in kwargs:
+            name = kwargs['name']
+
+        else:
+            name = kwargs.get('name', 'INS ' + str(id_))
+
         instrument = Instrument(id_, name, id_+1, self)
 
         instrument.track.addCallback(lambda x: self.sendInstrumentEvents(id_))
@@ -550,7 +612,7 @@ class Engine(threading.Thread):
         except FileNotFoundError:
             return
 
-        print('[Engine]', 'opening file', fp, end='... ')
+        print('[Engine]', 'opening file', fp, end='... \n')
 
         # reset environment...
         self.requests = []
@@ -569,7 +631,7 @@ class Engine(threading.Thread):
 
         for insID, insData in data['instruments'].items():
             id_ = int(insID)
-            print(insData)
+            print('  Loading instrument', id_)
             instrument = Instrument(id_, insData['name'], insData['chan'], self)
             instrument.setData(insData)
             instrument.track.addCallback(lambda x: self.sendInstrumentEvents(id_))
@@ -578,9 +640,10 @@ class Engine(threading.Thread):
             self.changeOctaveTranspose(id_, insData['octave_transpose'])
             self.changeMute(id_, insData['mute'])
 
-            self.call('instrument_added', instrument)
+        for ins in self.instruments.values():
+            self.call('instrument_added', ins)
 
-        print('loaded')
+        print('  Loading complete')
 
     def importMidiFile(self, fp):
         if fp == '':
