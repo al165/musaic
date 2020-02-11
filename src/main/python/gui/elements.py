@@ -81,7 +81,7 @@ class TrackScene(QtWidgets.QGraphicsScene):
         self._engine = engine
 
     def drawBackground(self, painter, rect):
-        print('[TrackScene]', 'drawBackground()', rect)
+        #print('[TrackScene]', 'drawBackground()', rect)
         scene_rect = self.parent().getSceneRect()
 
         bar_width = self.parent().getBarWidth()

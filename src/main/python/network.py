@@ -18,7 +18,7 @@ RANDOM = 0
 VER_9 = 1
 EUROAI = 2
 
-PLAYER = 1
+PLAYER = 2
 
 if PLAYER != RANDOM:
     from v9.Nets.ChordNetwork import ChordNetwork

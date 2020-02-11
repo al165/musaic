@@ -145,6 +145,7 @@ class MediaPlayer(threading.Thread):
                     if self.loop['loop']:
                         if next_bar >= self.loop['end']:
                             next_bar = self.loop['start']
+                            self.allOff()
 
                         if self.jack:
                             self.setJackTransportPosition(next_bar)
