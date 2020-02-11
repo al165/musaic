@@ -1,4 +1,61 @@
-# musaic
+# musAIc
 Interface for composing music with an A.I. musician
 
 ![musAIc 1.0_dev in use](docs/screenshot.png)
+
+Currently in active development.
+
+## Basic Installation
+
+### Requirements
+
+It is recomended to use Python version 3.6.x since I have encountered issues with installing `tensorflow` and `keras` on later versions of Python. The best way of making this easy is to use isolated environments, such as with [pyenv](https://github.com/pyenv/pyenv).
+
+### Linux / Mac
+
+1. `$ git clone` this repository to somewhere in your home directory
+
+2. Make sure you are in a Python 3.6.x environement (e.g. with global `$ python3 -v` is 3.6.x, or with something like [pyenv](https://github.com/pyenv/pyenv))
+
+3. Install the required packages with ```$ pip install -r requirements/base.txt``` 
+
+4. Launch `musAIc` with ```$ python src/main/python/main.py```
+
+
+### Windows
+
+1. Install `git` from [here](https://git-scm.com/downloads)
+
+2. Make sure Python 3.6.8 installed and added to PATH (get the installer [here](https://www.python.org/downloads/release/python-368/))
+
+3. Open Windows PowerShell (right-click Start button and select from the menu, or search `powershell.exe`) and `cd` to which directory will host `musAIc`
+
+4. `$ git clone` this repository in some folder.
+
+3. Install the required packages with ```$ pip install -r requirements/base.txt``` 
+
+4. Launch `musAIc` with ```$ python src/main/python/main.py```
+
+
+## Usage
+
+**TODO** 
+
+### Using MIDI out
+
+1. Make sure whichever MIDI device you wish to use (either through a soundcard, USB or a virtual MIDI cable) is initialised and working _before_ starting `musAIc`
+
+2. Once started click `options`, tick the box next to MIDI, then select you MIDI device from the dropdown menu. Optionally you can send the MIDI clock signal too (on by default), however this is largely untested may act weird.
+
+Note: there is also a small bug where re-opening the options dialog will reset which MIDI device it will use, so make sure to select the desired one again.
+
+
+### Changing the AI musician
+
+`musAIc` is currently bundelled with two neural networks: the original developed in 2019 (affectionately named `VERSION 9`), and the WIP pop star `EUROAI`. In the future they (and others!) would be selectable from within the GUI, however for now the only way is to change the `PLAYER` global variable in `src/main/python/network.py` to either 1 for `VERSION_9`, 2 for `EUROAI`, or 0 for a random number generator (for development/debugging, will not load `tensorflow`).
+
+
+
+
+
+
