@@ -710,7 +710,7 @@ class FixedSection(SectionBase):
             end_time = n[2] - (96 * m_num)
             measures[m_num].append((n[0], start_time, end_time))
 
-        if len(measures.keys() == 0):
+        if len(measures.keys()) == 0:
             print('[FixedSection]', 'Error: no measures found')
             return
         # - For each measure, collect the messages and set events...
