@@ -32,9 +32,14 @@ class MetaPredictor(Model):
         
         rhythms_dist = Input(shape=rhythm_params)
         melodies_dist = Input(shape=melody_params)
+
+        #print('\n[MetaPredictor]', rhythm_params, melody_params)
+        #print(meta_embed_size, lstm_size, dense_size, compile_now)
+        #print()
         
         rhythms_embed = TimeDistributed(Dense(16))(rhythms_dist)
-        
+
+
         rhythms_processed = Bidirectional(LSTM(lstm_size), 
                                           merge_mode="concat")(rhythms_embed)
         melodies_processed = Bidirectional(LSTM(lstm_size), 
@@ -43,8 +48,8 @@ class MetaPredictor(Model):
         processed_concat = Concatenate()([rhythms_processed, melodies_processed])
         
         pre_meta = Dense(dense_size)(processed_concat)
-        
-        
+
+
         prev_meta = Input(shape=(meta_embed_size, ))
         prev_meta_dropped = Dropout(0.5)(prev_meta)
         
@@ -52,8 +57,7 @@ class MetaPredictor(Model):
         
         meta_embedded = Dense(meta_embed_size, 
                               activation="softmax")(metas_combined)
-        
-        
+
         super().__init__(inputs=[rhythms_dist, melodies_dist, prev_meta],
                          outputs=meta_embedded,
                          name=repr(self))
@@ -94,8 +98,7 @@ class MetaPredictor(Model):
         with open(save_dir + "/meta_predictor_parameters.json", "r") as handle:
             param_dict = json.load(handle)
 
-        print('[MetPredictor]')
-        print(json.dumps(param_dict, indent=4))
+        #print('[MetaPredictor]', 'from_saved_custom', save_dir)
             
         meta_pred = cls(param_dict["rhythm_params"],
                             param_dict["melody_params"],
@@ -104,6 +107,6 @@ class MetaPredictor(Model):
                             param_dict["dense_size"],
                             compile_now=compile_now)
         
-        meta_pred.load_weights(save_dir + "/meta_predictor_weights")
+        #meta_pred.load_weights(save_dir + "/meta_predictor_weights")
         
         return meta_pred

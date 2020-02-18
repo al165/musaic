@@ -6,10 +6,10 @@ import threading
 import multiprocessing
 from collections import defaultdict
 
-try:
-    import jack
-except ImportError:
-    jack = None
+#try:
+#    import jack
+#except ImportError:
+jack = None
 
 from pythonosc import udp_client
 import mido
@@ -524,6 +524,14 @@ class Engine(threading.Thread):
     def stopPlaying(self):
         self.player.setStop()
         self.status = STOPPED
+
+    def togglePlay(self):
+        if self.status == PLAYING:
+            self.stopPlaying()
+        elif self.status == STOPPED:
+            self.startPlaying()
+        else:
+            print('[Engine]', 'togglePlay', self.status)
 
     def getTime(self):
         return self.clockVar[0], self.clockVar[1]

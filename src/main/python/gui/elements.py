@@ -15,13 +15,15 @@ DEFAULT_BAR_WIDTH = 80
 
 
 class TimeView(QtWidgets.QGraphicsView):
-
+    '''TimeLine bar'''
     def __init__(self, engine, scroll_bar, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._engine = engine
         self._scroll_bar = scroll_bar
 
         self._mouseStartX = None
+        self._start_bar_num = None
+        self._end_bar_num = None
 
         self.setViewportUpdateMode(QtWidgets.QGraphicsView.BoundingRectViewportUpdate)
 
@@ -44,9 +46,11 @@ class TimeView(QtWidgets.QGraphicsView):
             # dragging...
             start = min(self._mouseStartX, mouseEndX)
             end = max(self._mouseStartX, mouseEndX)
-            start_bar_num = int(start//bar_width)
-            end_bar_num = 1 + int(end//bar_width)
-            self._engine.setLoopBounds(start_bar_num, end_bar_num)
+            self._start_bar_num = int(start//bar_width)
+            self._end_bar_num = 1 + int(end//bar_width)
+            self.scene().parent().updateLoopBounds({'start': self._start_bar_num, 'end': self._end_bar_num})
+            self.scene().update()
+            self.update()
 
     def mouseReleaseEvent(self, e):
         if not self.scene() or not self._mouseStartX:
@@ -56,11 +60,11 @@ class TimeView(QtWidgets.QGraphicsView):
         bar_width = self.scene().parent().getBarWidth()
 
         if abs(mouseEndX - self._mouseStartX) > 20:
+            self._engine.setLoopBounds(self._start_bar_num, self._end_bar_num)
             self._mouseStartX = None
         else:
             bar_num = int(mouseEndX//bar_width)
             self._engine.setBarNumber(bar_num)
-
 
     def wheelEvent(self, e):
         #print('[TimeView]', e.angleDelta().y())
@@ -75,7 +79,7 @@ class TimeView(QtWidgets.QGraphicsView):
 
 
 class TrackScene(QtWidgets.QGraphicsScene):
-
+    '''QGraphicsScene holding section boxes, loop bounds, grid pattern'''
     def __init__(self, engine, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._engine = engine
@@ -113,7 +117,7 @@ class TrackScene(QtWidgets.QGraphicsScene):
 
         start = loop['start'] * bar_width
         loop_width = (loop['end'] - loop['start']) * bar_width
-        bounds_rect = QtCore.QRect(start, rect.top()-20, loop_width, rect.bottom()+20)
+        bounds_rect = QtCore.QRect(start, -20, loop_width, rect.bottom()+20)
         painter.fillRect(bounds_rect, brush)
 
         # draw vertical lines...
@@ -147,12 +151,6 @@ class TrackScene(QtWidgets.QGraphicsScene):
 
         super().drawBackground(painter, rect)
 
-    #def drawForeground(self, painter, rect):
-    #    print('[TrackScene]', 'drawForegound')
-
-    #    bar_width = self.parent().getBarWidth()
-
-
 
 class TrackPanel(QtWidgets.QWidget):
     def __init__(self, engine, section_view, timeline_view, *args,
@@ -160,6 +158,7 @@ class TrackPanel(QtWidgets.QWidget):
 
         super().__init__(*args, **kwargs)
 
+        self._engine = engine
         self._section_view = section_view
         self._timeline_view = timeline_view
         self._instrument_panel_height = instrument_panel_height
@@ -190,6 +189,11 @@ class TrackPanel(QtWidgets.QWidget):
         cursor_pen = QtGui.QPen(QtGui.QColor('orange'))
         self._track_cursor = self._track_scene.addLine(cursor, cursor_pen)
         self._track_cursor.setZValue(10)
+
+        loop_bounds = QtCore.QRectF(0.0, -self._timeline_height, self._timeline_height, self._bar_width*4)
+        loop_bounds_brush = QtGui.QBrush(QtGui.QColor('yellow'))
+        self._loop_bounds = self._track_scene.addRect(loop_bounds, brush=loop_bounds_brush)
+        self.updateLoopBounds()
 
         self.setLayout(layout)
 
@@ -263,6 +267,25 @@ class TrackPanel(QtWidgets.QWidget):
         self._track_cursor.setPos(int(x), -self._timeline_height)
         self._track_view.update()
 
+    def updateLoopBounds(self, loop=None):
+        if not loop:
+            loop = self._engine.loop
+
+        if 'loop' in loop:
+            highlight = loop['loop']
+        else:
+            highlight = self._engine.loop['loop']
+
+        if highlight:
+            brush = QtGui.QBrush(QtGui.QColor('yellow'))
+        else:
+            brush = QtGui.QBrush(QtGui.QColor('#1B1B1B'))
+
+        start = loop['start'] * self._bar_width
+        width = (loop['end'] - loop['end']) * self._bar_width
+
+        self._loop_bounds.setRect(0.0, start, self._timeline_height, width)
+
     def updateRects(self):
         scene_rect = self.getSceneRect()
         self._track_scene.setSceneRect(scene_rect)
@@ -314,7 +337,6 @@ class TrackPanel(QtWidgets.QWidget):
 
         for view in self.scene().views():
             view.translate(x_after - x_before, 0)
-
 
     def getInstrumentHeight(self):
         return self._instrument_panel_height
@@ -1045,6 +1067,7 @@ class InstrumentPanel(QtWidgets.QFrame):
 
 
 class SectionView(QtWidgets.QWidget):
+
     def __init__(self, engine, *args, **kwargs):
         super(SectionView, self).__init__(*args, **kwargs)
 

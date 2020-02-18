@@ -22,9 +22,9 @@ PLAYER = 2
 
 if PLAYER != RANDOM:
     from v9.Nets.ChordNetwork import ChordNetwork
-    from v9.Nets.MetaEmbedding import MetaEmbedding
-    from v9.Nets.MetaPredictor import MetaPredictor
-    from v9.Nets.CombinedNetwork import CombinedNetwork
+    from v9.Nets.MetaEmbeddingEuro import MetaEmbedding
+    from v9.Nets.MetaPredictorEuro import MetaPredictor
+    from v9.Nets.CombinedNetworkEuro import CombinedNetwork
 
 
 class RandomPlayer():
@@ -53,7 +53,7 @@ class NeuralNet():
             if PLAYER == VER_9:
                 trainingsDir = resources_path + '/v9_lead/'
             elif PLAYER == EUROAI:
-                trainingsDir = resources_path + '/euroAI_lead/'
+                trainingsDir = resources_path + '/euroAI/'
             else:
                 raise '[NeuralNet] Unknown player initialised. Aborting'
 
@@ -62,7 +62,7 @@ class NeuralNet():
             if PLAYER == VER_9:
                 trainingsDir = os.path.dirname(os.path.abspath(__file__)) + '/v9/Trainings/v9_lead'
             elif PLAYER == EUROAI:
-                trainingsDir = os.path.dirname(os.path.abspath(__file__)) + '/v9/Trainings/euroAI_lead'
+                trainingsDir = os.path.dirname(os.path.abspath(__file__)) + '/v9/Trainings/euroAI'
             else:
                 raise '[NeuralNet] Unknown player initialised. Aborting'
 
@@ -76,11 +76,13 @@ class NeuralNet():
         for k, v in list(self.rhythmDict.items()):
             self.rhythmDict[v] = k
 
-        self.metaEmbedder = MetaEmbedding.from_saved_custom(trainingsDir + '/meta')
-        metaPredictor = MetaPredictor.from_saved_custom(trainingsDir + '/meta')
+        self.metaEmbedder = MetaEmbedding.from_saved_custom(os.path.join(trainingsDir, 'meta'))
+        metaPredictor = MetaPredictor.from_saved_custom(os.path.join(trainingsDir, 'meta'))
 
-        weightsFolder = trainingsDir + 'weights'
+        weightsFolder = os.path.join(trainingsDir, 'weights')
         #weightsFolder = trainingsDir + 'weights/_checkpoint_19'
+
+        print('[NeuralNet]', weightsFolder)
 
         self.combinedNet = CombinedNetwork.from_saved_custom(weightsFolder, metaPredictor,
                                                              generation=True, compile_now=False)
@@ -90,14 +92,14 @@ class NeuralNet():
             'melody': self.combinedNet.params['melody_net_params'][3]
         }
 
-        with open(trainingsDir + 'ChordGenerator.conversion_params', 'rb') as f:
+        with open(os.path.join(trainingsDir, 'ChordGenerator.conversion_params'), 'rb') as f:
             chordConversionParams = pkl.load(f)
 
         self.chordDict = chordConversionParams['chords']
         for k, v in list(self.chordDict.items()):
             self.chordDict[v] = k
 
-        self.chordNet = ChordNetwork.from_saved_custom(trainingsDir + '/chord/',
+        self.chordNet = ChordNetwork.from_saved_custom(os.path.join(trainingsDir, 'chord'),
                                                        load_melody_encoder=True)
 
         # predict some junk data to fully initilise model...

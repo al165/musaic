@@ -285,14 +285,19 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
     def deleteInstrument(self, instrumentID):
-        pass
+        raise NotImplementedError
 
     def setBar(self, e):
         print('[MainWindow]', 'setBar', e)
 
+    def keyPressEvent(self, event):
+        print('[MainWindow]', 'keyPressEvent', event)
+        if type(event) == QtGui.QKeyEvent:
+            if event.key() == QtCore.Qt.Key_Space:
+                self.engine.togglePlay()
+
     def updateCursor(self):
         try:
-            #print('[MainWindow]', 'updateCursor', self.engine.getTime())
             bar_num, tick = self.engine.getTime()
             self._track_view.updateCursor(bar_num, tick)
         finally:
@@ -357,7 +362,6 @@ class MainWindow(QtWidgets.QMainWindow):
         file_name = QtWidgets.QFileDialog.getSaveFileName(self, 'Export MIDI...', filter='MIDI (*.mid *.midi)')
         print(file_name)
         self.engine.exportMidiFile(file_name[0])
-
 
 
 if __name__ == '__main__':
