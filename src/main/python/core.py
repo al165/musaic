@@ -37,7 +37,7 @@ DEFAULT_AI_PARAMS = {
     'sample_mode': 'dist',
     'lead_mode': 'melody',
     'context_mode': 'inject',
-    'lead': None,
+    'lead': -1,
     'injection_params': (('qb', 'eb'), 'maj'),
     'lead_bar': None,
     'prev_bars': None,
@@ -472,6 +472,9 @@ class SectionBase:
             for m in self.measures.values():
                 m.setChan(int(kwargs['chan']))
 
+    def getParameters(self):
+        return self.params
+
     def newMeasure(self, notes=None, events=None):
         id_ = self.measureCount
         m = Measure(id_, chan=self.params.get('chan', 1), notes=notes, events=events)
@@ -808,6 +811,7 @@ class Instrument:
         if sectionType == 'ai':
             sectionParams = {**DEFAULT_SECTION_PARAMS, **DEFAULT_AI_PARAMS, **params}
             sectionParams['chan'] = self.chan
+            sectionParams['meta_data'] = deepcopy(DEFAULT_META_DATA)
             section = AISection(name, idx, **sectionParams)
         elif sectionType == 'fixed':
             sectionParams = {**DEFAULT_SECTION_PARAMS, **params}
@@ -875,7 +879,7 @@ class Instrument:
             print('[Instrument]', 'section', sectionID, 'is not AI')
             return
 
-        leadID = section.params.get('lead', None)
+        leadID = section.params.get('lead', -1)
 
         for i, m in enumerate(section.flatMeasures):
             if not m:

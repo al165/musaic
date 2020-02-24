@@ -30,7 +30,7 @@ if PLAYER != RANDOM:
 class RandomPlayer():
     ''' For testing purpose only! '''
     def __init__(self):
-        print('[RandomPlayer]', 'Using random player for testing')
+        print('[RandomPlayer]', ' === Using RANDOM PLAYER for testing ===')
 
     def generateBar(self, **kwargs):
         notes = []
@@ -57,7 +57,6 @@ class NeuralNet():
             else:
                 raise '[NeuralNet] Unknown player initialised. Aborting'
 
-
         else:
             if PLAYER == VER_9:
                 trainingsDir = os.path.dirname(os.path.abspath(__file__)) + '/v9/Trainings/v9_lead'
@@ -66,6 +65,7 @@ class NeuralNet():
             else:
                 raise '[NeuralNet] Unknown player initialised. Aborting'
 
+        print('[NeuralNet]', ' === Using {} ==='.format('VER9' if PLAYER == VER_9 else 'EUROAI'))
 
         print('[NeuralNet]', 'trainingsDir:', trainingsDir)
 
@@ -82,7 +82,7 @@ class NeuralNet():
         weightsFolder = os.path.join(trainingsDir, 'weights')
         #weightsFolder = trainingsDir + 'weights/_checkpoint_19'
 
-        print('[NeuralNet]', weightsFolder)
+        #print('[NeuralNet]', weightsFolder)
 
         self.combinedNet = CombinedNetwork.from_saved_custom(weightsFolder, metaPredictor,
                                                              generation=True, compile_now=False)
@@ -146,7 +146,9 @@ class NeuralNet():
         if not metaData:
             metaData = DEFAULT_META_DATA
         values = []
+        #print('[NeuralNet]', 'embedMetaData:')
         for k in sorted(metaData.keys()):
+            #print(k, metaData[k])
             if k == 'ts':
                 values.extend([4, 4])
             else:
@@ -197,7 +199,7 @@ class NeuralNet():
                 rhythmContexts[i, :, :] = r
                 melodyContexts[:, i, :] = m
 
-        print('[NeuralNet]', 'Contexts:', rhythmContexts, melodyContexts)
+        #print('[NeuralNet]', 'Contexts:', rhythmContexts, melodyContexts)
 
         return rhythmContexts, melodyContexts
 
@@ -220,6 +222,8 @@ class NeuralNet():
             chord_num = 1
         else:
             chord_num = int(chord_mode)
+
+        #print('[NeuralNet]', 'sampleOutput', 'chord_mode', chord_mode, 'chord_num', chord_num)
 
         if mode == 'argmax' or mode == 'best':
             sampledRhythm = np.argmax(output[0], axis=-1)
@@ -273,7 +277,7 @@ class NeuralNet():
             melody = [random.choice([1, 7]) for _ in range(48)]
             return np.array([rhythm]), np.array([[melody]])
 
-        print(measure.notes)
+        #print(measure.notes)
 
         rhythm = []
         melody = [-1]*48
@@ -355,6 +359,7 @@ class NeuralNet():
         if chord_mode not in {'force', 'auto'}:
             chord_mode = int(chord_mode)
 
+        #print('[NeuralNet]', 'convertContextToNotes', 'chord_mode', chord_mode)
         sample_mode = kwargs.get('sample_mode', 'top')
 
         for i, beat in enumerate(rhythmContext):
@@ -374,7 +379,7 @@ class NeuralNet():
             if chord_mode == 'force':
                 tonic = 12 + (pc % 12)
                 notes = predictChord(notes, tonic, sample_mode, melodyContext, kwargs['meta_data'])
-            elif chord_mode == 0:
+            elif chord_mode == 0 or chord_mode == 'auto':
                 if pc >= 12:
                     # draw chord intervals...
                     notes = predictChord(notes, pc, sample_mode, melodyContext, kwargs['meta_data'])
@@ -414,13 +419,13 @@ class NetworkEngine(multiprocessing.Process):
         while not self.stopRequest.is_set():
             try:
                 requestMsg = self.requestQueue.get(timeout=1)
-                print('[NetworkEngine]', 'request recieved from', requestMsg['measure_address'])
+                #print('[NetworkEngine]', 'request recieved from', requestMsg['measure_address'])
             except multiprocessing.queues.Empty:
                 continue
 
-            print('generating result...')
+            #print('generating result...')
             result = self.network.generateBar(**requestMsg['request'])
-            print('generateed result')
+            #print('generateed result')
 
             self.returnQueue.put({'measure_address': requestMsg['measure_address'],
                                   'result': result})

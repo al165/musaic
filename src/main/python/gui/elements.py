@@ -832,7 +832,7 @@ class SectionParameters(QtWidgets.QFrame):
         style_sheet = f'background-color: rgba({color.red()},{color.green()},{color.blue()},255);'
         self._section_name.setStyleSheet(style_sheet)
 
-        params = self._section.params
+        params = self._section.getParameters()
         for k, v in params.items():
             if k not in self.parameters:
                 continue
@@ -862,7 +862,7 @@ class SectionParameters(QtWidgets.QFrame):
         self.lead.addItem('None', -1)
 
         for ins in self._engine.instruments.values():
-            print(ins, self._instrument)
+            #print(ins, self._instrument)
             if self._instrument.id_ != ins.id_:
                 self.lead.addItem(ins.name, ins.id_)
 

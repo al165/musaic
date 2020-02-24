@@ -1,7 +1,7 @@
 import math
 
 from PyQt5 import QtCore, QtGui, QtWidgets
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer
 
 class BoxSlider(QtWidgets.QFrame):
     valueChanged = QtCore.pyqtSignal(int)
@@ -245,6 +245,9 @@ class Knob(QtWidgets.QWidget):
         self._sensitivity = 200
 
         self._emit = True
+        self._update_timer = QTimer()
+        self._update_timer.setSingleShot(True)
+        self._update_timer.timeout.connect(self.updateValue)
 
         self._value = minimum
         self.valueChanged.connect(self.repaint)
@@ -334,9 +337,23 @@ class Knob(QtWidgets.QWidget):
         self._emit = True
         self.value = self.value
 
+    def wheelEvent(self, e):
+        change = (1 if e.angleDelta().y() > 0 else -1) * (self.maximum - self.minimum)/100
+        self._emit = False
+        self.value += change
+        self._update_timer.start(100)
+        self.update()
+        #self.value += change
+
+    def updateValue(self, *args):
+        '''When Knob movement has settled, update the value.'''
+        self._emit = True
+        self.value = self._value
+
 
 
 if __name__ == '__main__':
+    print(' === TESTING GUI ELEMENTS ===')
     app = QtWidgets.QApplication([])
 
     window = QtWidgets.QMainWindow()

@@ -6,10 +6,10 @@ import threading
 import multiprocessing
 from collections import defaultdict
 
-#try:
-#    import jack
-#except ImportError:
-jack = None
+try:
+    import jack
+except ImportError:
+    jack = None
 
 from pythonosc import udp_client
 import mido
