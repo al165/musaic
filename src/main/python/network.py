@@ -43,33 +43,26 @@ class RandomPlayer():
 
 class NeuralNet():
 
-    def __init__(self, resources_path=None):
+    def __init__(self, resources_path=None, init_callbacks=None):
 
         print('[NeuralNet]', 'Initialising...')
+        self.loaded = False
 
         startTime = time.time()
 
-        if resources_path:
-            if PLAYER == VER_9:
-                trainingsDir = resources_path + '/v9_lead/'
-            elif PLAYER == EUROAI:
-                trainingsDir = resources_path + '/euroAI/'
-            else:
-                raise '[NeuralNet] Unknown player initialised. Aborting'
+        if not resources_path:
+            resources_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../resources/base/')
 
+        if PLAYER == VER_9:
+            trainingsDir = os.path.join(resources_path, 'v9_lead/')
+        elif PLAYER == EUROAI:
+            trainingsDir = os.path.join(resources_path, 'euroAI/')
         else:
-            if PLAYER == VER_9:
-                trainingsDir = os.path.dirname(os.path.abspath(__file__)) + '/v9/Trainings/v9_lead'
-            elif PLAYER == EUROAI:
-                trainingsDir = os.path.dirname(os.path.abspath(__file__)) + '/v9/Trainings/euroAI'
-            else:
-                raise '[NeuralNet] Unknown player initialised. Aborting'
+            raise('[NeuralNet] Unknown player initialised ({}). Aborting'.format(PLAYER))
 
         print('[NeuralNet]', ' === Using {} ==='.format('VER9' if PLAYER == VER_9 else 'EUROAI'))
 
-        print('[NeuralNet]', 'trainingsDir:', trainingsDir)
-
-        with open(trainingsDir + 'DataGenerator.conversion_params', 'rb') as f:
+        with open(os.path.join(trainingsDir, 'DataGenerator.conversion_params'), 'rb') as f:
             conversionParams = pkl.load(f)
 
         self.rhythmDict = conversionParams['rhythm']
@@ -80,10 +73,6 @@ class NeuralNet():
         metaPredictor = MetaPredictor.from_saved_custom(os.path.join(trainingsDir, 'meta'))
 
         weightsFolder = os.path.join(trainingsDir, 'weights')
-        #weightsFolder = trainingsDir + 'weights/_checkpoint_19'
-
-        #print('[NeuralNet]', weightsFolder)
-
         self.combinedNet = CombinedNetwork.from_saved_custom(weightsFolder, metaPredictor,
                                                              generation=True, compile_now=False)
 
@@ -107,6 +96,15 @@ class NeuralNet():
 
         print('\n[NeuralNet]', 'Neural network loaded in', int(time.time() - startTime), 'seconds\n')
 
+        self.loaded = True
+
+        if init_callbacks:
+            try:
+                for f in init_callbacks:
+                    f()
+            except:
+                init_callbacks()
+
     def generateBar(self, octave=4, **kwargs):
         ''' Expecting...
             - 'lead_bar'
@@ -120,9 +118,9 @@ class NeuralNet():
             - 'octave'
         '''
 
-        print('[NeuralNet]', 'generateBar with params')
-        for k, v in kwargs.items():
-            print('  ', k, v)
+        #print('[NeuralNet]', 'generateBar with params')
+        #for k, v in kwargs.items():
+        #    print('  ', k, v)
 
         rhythmContexts, melodyContexts = self.getContexts(kwargs)
         embeddedMetaData = self.embedMetaData(kwargs['meta_data'])
@@ -397,12 +395,13 @@ class NeuralNet():
 
 class NetworkEngine(multiprocessing.Process):
 
-    def __init__(self, requestQueue, returnQueue, resources_path=None):
+    def __init__(self, requestQueue, returnQueue, resources_path=None, init_callbacks=None):
         super(NetworkEngine, self).__init__()
 
         self.requestQueue = requestQueue
         self.returnQueue = returnQueue
         self.resources_path = resources_path
+        self.init_callbacks = init_callbacks
 
         self.stopRequest = multiprocessing.Event()
 
@@ -411,26 +410,32 @@ class NetworkEngine(multiprocessing.Process):
     def run(self):
         if not self.network:
             if PLAYER == VER_9 or PLAYER == EUROAI:
-                self.network = NeuralNet(resources_path=self.resources_path)
+                self.network = NeuralNet(resources_path=self.resources_path,
+                                         init_callbacks=self.init_callbacks)
             elif PLAYER == RANDOM:
                 self.network = RandomPlayer()
-            #print('[NetworkEngine]', 'network loaded')
+
+            print('[NetworkEngine]', 'network loaded')
 
         while not self.stopRequest.is_set():
             try:
                 requestMsg = self.requestQueue.get(timeout=1)
                 #print('[NetworkEngine]', 'request recieved from', requestMsg['measure_address'])
             except multiprocessing.queues.Empty:
+                #print('no messages recieved yet')
                 continue
 
             #print('generating result...')
             result = self.network.generateBar(**requestMsg['request'])
-            #print('generateed result')
+            #print('generated result')
 
             self.returnQueue.put({'measure_address': requestMsg['measure_address'],
                                   'result': result})
 
-            time.sleep(1/10)
+            time.sleep(0.01)
+
+    def isLoaded(self):
+        return self.network.loaded
 
     def join(self, timeout=1):
         self.stopRequest.set()

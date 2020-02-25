@@ -89,6 +89,7 @@ class Measure:
 
     def call(self):
         ''' calls functions whenever notes are updated '''
+        #print('[Measure]', 'updated')
         for func in self.callbacks:
             func()
 
@@ -419,13 +420,8 @@ class SectionBase:
         self.flatMeasures = []
         self.measureCount = 0
 
-        #self.params = {**DEFAULT_SECTION_PARAMS, **kwargs}
         self.params = dict()
         self.changeParameter(**{**DEFAULT_SECTION_PARAMS, **kwargs})
-        #self.changeParameter(**self.params)
-        #for k, v in kwargs.items():
-        #    self.params[k] = v
-
 
         self.flattenMeasures()
 
@@ -449,10 +445,8 @@ class SectionBase:
             if isJSONSerializable(v):
                 self.params[k] = v
             else:
-                print('    (WARNING: not serializable)')
+                #print('    (WARNING: not serializable)')
                 pass
-
-        #self.flattenMeasures()
 
         if 'transpose_octave' in kwargs:
             #print('[Section]', 'updated section octave', kwargs['transpose_octave'])
@@ -506,6 +500,13 @@ class SectionBase:
         '''Length of section (excluding repeats)'''
         return self.params['length']
 
+    def isGenerated(self):
+        '''Returns True if all measures are generated'''
+        if any([m.isEmpty() for m in self.flatMeasures]):
+            #print('[SectionBase]', [m.isEmpty() for m in self.flatMeasures])
+            return False
+        else:
+            return True
 
     def getData(self):
         '''Returns a dictionary of section data, for saving as JSON.'''
@@ -892,6 +893,7 @@ class Instrument:
                 #print(i, 'm.genRequestSent')
                 continue
 
+            m.setEmpty()
             request = {**DEFAULT_SECTION_PARAMS, **DEFAULT_AI_PARAMS, **section.params}
 
             if leadID and leadID >= 0:

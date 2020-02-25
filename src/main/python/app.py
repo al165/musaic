@@ -315,10 +315,8 @@ class MediaPlayer(threading.Thread):
 
 class Engine(threading.Thread):
 
-    def __init__(self, resources_path=None, gui_handle=None, argv=None):
+    def __init__(self, resources_path=None, **kwargs):
         super(Engine, self).__init__()
-
-        #self.guiHandle = gui_handle
 
         self.instruments = dict()
         self.instrumentOctave = dict()
@@ -331,8 +329,10 @@ class Engine(threading.Thread):
         self.netReturnQueue = multiprocessing.Queue()
 
         self.callbacks = {
+            'network_initialised': set(),
             'instrument_added': set(),
             'section_added': set(),
+            'network_queue_empty': set()
         }
 
         self.oscOptions = {
@@ -362,7 +362,8 @@ class Engine(threading.Thread):
 
         self.networkEngine = NetworkEngine(self.netRequestQueue,
                                            self.netReturnQueue,
-                                           resources_path=resources_path)
+                                           resources_path=resources_path,
+                                           init_callbacks=kwargs.get('init_callback', None))
 
         self.status = STOPPED
         self.stopRequest = multiprocessing.Event()
@@ -543,7 +544,6 @@ class Engine(threading.Thread):
         id_ = len(self.instruments.keys())
         if 'name' in kwargs:
             name = kwargs['name']
-
         else:
             name = kwargs.get('name', 'INS ' + str(id_))
 
@@ -580,11 +580,13 @@ class Engine(threading.Thread):
     def addPendingRequest(self, requestMsg):
         self.requests.append(requestMsg)
 
-    def saveFile(self, name='project.mus'):
-        if name[-4:] != '.mus':
-            name = name + '.mus'
+    def saveFile(self, fp='project.mus'):
+        if fp == '':
+            return
+        if fp[-4:] != '.mus':
+            fp = fp + '.mus'
 
-        print('[Engine]', 'saving project as', name, end='... ')
+        print('[Engine]', 'saving project as', fp, end='... ')
 
         data = {
             'global_settings': {
@@ -601,7 +603,7 @@ class Engine(threading.Thread):
         #print('[Engine]', 'compiled dictionary, saving...')
 
         try:
-            with open(name, 'w') as f:
+            with open(fp, 'w') as f:
                 json.dump(data, f, indent=4)
         except Exception as e:
             print('\n------------')
@@ -615,10 +617,12 @@ class Engine(threading.Thread):
     def loadFile(self, fp):
         if fp == '':
             return
+
         try:
             with open(fp, 'r') as f:
                 data = json.load(f)
         except FileNotFoundError:
+            print('[Engine]', fp, 'not found...')
             return
 
         print('[Engine]', 'opening file', fp, end='... \n')
@@ -673,15 +677,23 @@ class Engine(threading.Thread):
 
         print('[Engine]', 'done')
 
-    def exportMidiFile(self, fp='test.mid'):
+    def exportMidiFile(self, fp='test.mid', track_list=None):
+        '''Export tracks to specified MIDI file. track_list either None (export all tracks), or list
+        of instrument IDs to export.'''
         if fp == '':
             return
 
         print('[Engine]', 'exporting MIDI file', fp)
+        #print('   track_list:', track_list)
 
         mid = MidiFile(ticks_per_beat=24, type=1)
 
-        for instrument in self.instruments.values():
+        if track_list is None or len(track_list) == 0:
+            ins_list = list(self.instruments.values())
+        else:
+            ins_list = [self.instruments[id_] for id_ in track_list]
+
+        for instrument in ins_list:
             track = MidiTrack()
 
             events = []
@@ -698,22 +710,12 @@ class Engine(threading.Thread):
             track.append(MetaMessage('track_name', name=instrument.name))
             for i, e in enumerate(events):
                 msg = e[1]
-
-                # when saving, time is number of ticks to NEXT event?
-                #try:
-                #    t = events[i+1][0] - e[0]
-                #except IndexError:
-                #    #t = len(instrument.track.flatMeasures) * 96 - e[0]
-                #    t = 0
-
                 if i > 0:
                     t = e[0] - events[i-1][0]
                 else:
                     t = e[0]
 
-
-
-                print(msg, t)
+                #print(msg, t)
                 nn = msg.note + 12*self.instrumentOctave[instrument.id_] + self.global_transpose
                 track.append(msg.copy(time=t, note=nn))
 
@@ -723,7 +725,5 @@ class Engine(threading.Thread):
         mid.save(fp)
 
         print('[Engine]', 'done')
-
-
 
 # EOF

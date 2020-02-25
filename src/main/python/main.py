@@ -308,6 +308,8 @@ class MainWindow(QtWidgets.QMainWindow):
         file_name = QtWidgets.QFileDialog.getOpenFileName(self, 'Open project...',
                                                           filter='musAIc (*.mus)')
         print(file_name)
+        if file_name[0] == '':
+           return
 
         # first delete everything...
         self._track_view.reset()
