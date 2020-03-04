@@ -141,14 +141,13 @@ class MediaPlayer(threading.Thread):
                 with self.clockVar.get_lock():
                     next_bar = self.clockVar[0] + 1
 
-                    print('[MediaPlayer]', 'loop:', self.loop, 'next_bar', next_bar)
                     if self.loop['loop']:
                         if next_bar >= self.loop['end']:
                             next_bar = self.loop['start']
                             self.allOff()
 
-                        if self.jack:
-                            self.setJackTransportPosition(next_bar)
+                            if self.jack:
+                                self.setJackTransportPosition(next_bar)
 
                     with self.clockVar:
                         self.clockVar[0] = next_bar
@@ -694,6 +693,9 @@ class Engine(threading.Thread):
             ins_list = [self.instruments[id_] for id_ in track_list]
 
         for instrument in ins_list:
+            if instrument.mute:
+                continue
+
             track = MidiTrack()
 
             events = []

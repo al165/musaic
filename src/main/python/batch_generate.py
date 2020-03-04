@@ -25,18 +25,19 @@ from core import DEFAULT_META_DATA, DEFAULT_SECTION_PARAMS, DEFAULT_AI_PARAMS
 N = 5
 V = 20
 
-ROOT_PATH = os.path.expanduser('~/Projects/batch_songs')
+ROOT_PATH = os.path.expanduser('~/Projects/batch_chords')
 
 PARAMETER_RANGES = {
     'length': [2, 4, 8],
     'loop_alt_len': [0, 1],
-    'sample_mode': ['dist', 'best', 'top'],
+    'sample_mode': ['dist'],
+    'chord_mode': [0, 2, 4],
     'injection_params': [
         (('qb', 'eb'), 'maj'),
         (('qb',), 'maj'),
         (('qb', 'lb'), 'maj'),
         (('fb', 'eb'), 'maj'),
-        (('tb',), 'maj'),
+        (('tb', 'fb'), 'maj'),
     ],
 }
 
@@ -58,18 +59,18 @@ if __name__ == '__main__':
     ##while not app.networkEngine.isLoaded():
     ##    time.sleep(0.01)
 
-    time.sleep(14)
+    time.sleep(10)
 
     print(' == Creating instruments...')
-    bass = app.addInstrument(name='bass')
-    lead = app.addInstrument(name='lead')
+    #bass = app.addInstrument(name='bass')
+    lead = app.addInstrument(name='chords')
 
     print(' == Adding sections...')
-    _, bass_sec = bass.newSection(chord_mode=1,
-                                  octave=3,
-                                  transpose_octave=-1,
-                                  length=2,
-                                  loop_num=8)
+    #_, bass_sec = bass.newSection(chord_mode=1,
+    #                              octave=2,
+    #                              transpose_octave=-1,
+    #                              length=2,
+    #                              loop_num=8)
 
     _, lead_sec = lead.newSection()
 
@@ -78,44 +79,45 @@ if __name__ == '__main__':
     print(list(PARAMETER_RANGES.keys()))
 
     counter = 0
-    for l, lal, sm, ip in product(*PARAMETER_RANGES.values()):
+    for l, lal, sm, cm, ip in product(*PARAMETER_RANGES.values()):
 
+        #print(l, 16//l, lal, sm, ip)
         params = {**DEFAULT_SECTION_PARAMS, **DEFAULT_AI_PARAMS}
-        params['loop_num'] = 16//l
+        params['loop_num'] = 8//l
         params['length'] = l
         params['sample_mode'] = sm
         params['loop_alt_len'] = lal
-        params['lead'] = bass.id_
-        params['chord_mode'] = 1
+        #params['lead'] = bass.id_
+        params['chord_mode'] = cm
         params['octave'] = 4
 
         lead_sec.changeParameter(**params)
-
-        print(params)
+        #print(params)
 
         for _ in range(N):
-            bass_md = {**DEFAULT_META_DATA}
-            for k, r in META_DATA_RANGES.items():
-                bass_md[k] = random.uniform(r[0], r[1])
-            bass_sec.changeParameter(meta_data=bass_md)
+            #bass_md = {**DEFAULT_META_DATA}
+            #for k, r in META_DATA_RANGES.items():
+            #    bass_md[k] = random.uniform(r[0], r[1])
+            #bass_sec.changeParameter(meta_data=bass_md)
 
             lead_md = {**DEFAULT_META_DATA}
             for k, r in META_DATA_RANGES.items():
                 lead_md[k] = random.uniform(r[0], r[1])
-            lead_sec.changeParameter(meta_data=bass_md)
+            lead_sec.changeParameter(meta_data=lead_md)
 
             # regenerate...
-            bass.requestGenerateMeasures(gen_all=True)
+            #bass.requestGenerateMeasures(gen_all=True)
             lead.requestGenerateMeasures(gen_all=True)
             time.sleep(0.1)
 
-            while not bass_sec.isGenerated() or not lead_sec.isGenerated():
+            #while not bass_sec.isGenerated() or not lead_sec.isGenerated():
+            while not lead_sec.isGenerated():
                 time.sleep(0.1)
 
-            app.exportMidiFile(os.path.abspath(os.path.join(ROOT_PATH, 'combined/', 'combined_{:02}.mid'.format(counter))), track_list=None)
-            app.exportMidiFile(os.path.abspath(os.path.join(ROOT_PATH, 'bass/', 'bass_{:04}.mid'.format(counter))),
-                               track_list=[bass.id_])
-            app.exportMidiFile(os.path.abspath(os.path.join(ROOT_PATH, 'lead/', 'lead_{:04}.mid'.format(counter))),
+            #app.exportMidiFile(os.path.abspath(os.path.join(ROOT_PATH, 'combined/', 'combined_{:04}.mid'.format(counter))), track_list=None)
+            #app.exportMidiFile(os.path.abspath(os.path.join(ROOT_PATH, 'bass/', 'bass_{:04}.mid'.format(counter))),
+            #                   track_list=[bass.id_])
+            app.exportMidiFile(os.path.abspath(os.path.join(ROOT_PATH, 'chord/', 'chord_{:04}.mid'.format(counter))),
                                track_list=[lead.id_])
 
             print(counter, 'generated!')
