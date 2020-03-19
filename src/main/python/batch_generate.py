@@ -22,16 +22,16 @@ from core import DEFAULT_META_DATA, DEFAULT_SECTION_PARAMS, DEFAULT_AI_PARAMS
 
 '''
 
-N = 5
+N = 10
 V = 20
 
-ROOT_PATH = os.path.expanduser('~/Projects/batch_chords')
+ROOT_PATH = os.path.expanduser('~/Projects/new_melodies')
 
 PARAMETER_RANGES = {
     'length': [2, 4, 8],
     'loop_alt_len': [0, 1],
     'sample_mode': ['dist'],
-    'chord_mode': [0, 2, 4],
+    'chord_mode': [1],
     'injection_params': [
         (('qb', 'eb'), 'maj'),
         (('qb',), 'maj'),
@@ -45,7 +45,7 @@ META_DATA_RANGES = {
     'span': (1, 30),
     'jump': (0, 12),
     'cDens': (0, 1),
-    'cDepth': (1, 5),
+    #'cDepth': (1, 5),
     'tCent': (40, 80),
     'rDens': (0, 8),
     'pos': (0, 1)
@@ -114,13 +114,13 @@ if __name__ == '__main__':
             while not lead_sec.isGenerated():
                 time.sleep(0.1)
 
-            #app.exportMidiFile(os.path.abspath(os.path.join(ROOT_PATH, 'combined/', 'combined_{:04}.mid'.format(counter))), track_list=None)
+            app.exportMidiFile(os.path.abspath(os.path.join(ROOT_PATH, 'melody_{:04}.mid'.format(counter))), track_list=None)
             #app.exportMidiFile(os.path.abspath(os.path.join(ROOT_PATH, 'bass/', 'bass_{:04}.mid'.format(counter))),
             #                   track_list=[bass.id_])
-            app.exportMidiFile(os.path.abspath(os.path.join(ROOT_PATH, 'chord/', 'chord_{:04}.mid'.format(counter))),
-                               track_list=[lead.id_])
+            #app.exportMidiFile(os.path.abspath(os.path.join(ROOT_PATH, 'chord/', 'chord_{:04}.mid'.format(counter))),
+            #                   track_list=[lead.id_])
 
-            print(counter, 'generated!')
+            print(counter, 'songs generated')
 
             counter += 1
 

@@ -60,7 +60,7 @@ class NeuralNet():
         else:
             raise('[NeuralNet] Unknown player initialised ({}). Aborting'.format(PLAYER))
 
-        print('[NeuralNet]', ' === Using {} ==='.format('VER9' if PLAYER == VER_9 else 'EUROAI'))
+        print('\n[NeuralNet]', ' === Using {} ===\n'.format('VER9' if PLAYER == VER_9 else 'EUROAI'))
 
         with open(os.path.join(trainingsDir, 'DataGenerator.conversion_params'), 'rb') as f:
             conversionParams = pkl.load(f)
@@ -165,17 +165,19 @@ class NeuralNet():
         if mode == 'inject':
             rhythmPool = []
             for rhythmType in injection_params[0]:
+                # *2 gives extra weight to non-empty beats
                 rhythmPool.extend({
-                    'qb': [self.rhythmDict[(0.0,)]],
+                    'qb': [self.rhythmDict[(0.0,)]]*2,
                     'lb': [self.rhythmDict[()]],
                     'eb': [self.rhythmDict[(0.0, 0.5)],
-                           self.rhythmDict[(0.5,)]],
+                           self.rhythmDict[(0.5,)]]*2,
                     'fb': [self.rhythmDict[(0.0, 0.25, 0.5, 0.75)],
                            self.rhythmDict[(0.0, 0.25, 0.5)],
-                           self.rhythmDict[(0.5, 0.75)]],
-                    #'tb': [self.rhythmDict[(0.0, 0.3333, 0.6667)]],
-                    'tb': [self.rhythmDict[(0.0,)]],
+                           self.rhythmDict[(0.5, 0.75)]]*2,
+                    'tb': [self.rhythmDict[(0.0, 0.333, 0.6667)],
+                           self.rhythmDict[(0.3333, 0.6667)]]*2,
                 }[rhythmType])
+
             rhythmContexts = [np.random.choice(rhythmPool, size=(1, 4)) for _ in range(4)]
 
             melodyPool = {
@@ -316,14 +318,12 @@ class NeuralNet():
     def convertContextToNotes(self, rhythmContext, melodyContext,
                               chordContexts, kwargs, octave=4):
 
-        #print(rhythmContext.shape, melodyContext.shape)
-
         def makeNote(pc, startTick, endTick):
             nn = 12*(octave+1) + pc - 1
             note = (int(nn), startTick, endTick)
             return note
 
-        def predictChord(notes, pc, sample_mode, melodyContext, metaData):
+        def predictChord(notes, pc, sample_mode, melodyContext, metaData, chord_mode='auto'):
             values = []
             for k in sorted(metaData.keys()):
                 if k == 'ts':
@@ -341,11 +341,12 @@ class NeuralNet():
                 chord = np.argmax(chord_outputs[0], axis=-1)
 
             intervals = self.chordDict[chord]
+            if chord_mode == 1:
+                intervals = [rand.choice(intervals)]
             for interval in intervals:
                 notes.append(makeNote(pc+interval-12, tick, endTick))
 
             return notes
-
 
         if 'meta_data' not in kwargs or kwargs['meta_data'] == None:
             kwargs['meta_data'] = deepcopy(DEFAULT_META_DATA)
@@ -377,15 +378,13 @@ class NeuralNet():
             if chord_mode == 'force':
                 tonic = 12 + (pc % 12)
                 notes = predictChord(notes, tonic, sample_mode, melodyContext, kwargs['meta_data'])
-            elif chord_mode == 0 or chord_mode == 'auto':
+            elif chord_mode in (0, 1, 'auto'):
                 if pc >= 12:
                     # draw chord intervals...
-                    notes = predictChord(notes, pc, sample_mode, melodyContext, kwargs['meta_data'])
+                    notes = predictChord(notes, pc, sample_mode, melodyContext, kwargs['meta_data'], chord_mode=chord_mode)
                 else:
                     notes.append(makeNote(pc, tick, endTick))
 
-            elif chord_mode == 1:
-                notes.append(makeNote(pc, tick, endTick))
             else:
                 for chord_pc in chordContexts[i//2]:
                     notes.append(makeNote(chord_pc, tick, endTick))
