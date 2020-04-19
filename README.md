@@ -65,7 +65,7 @@ For complete beginners of Python and Terminal
    into the folder:
 
    ```
-   $ git clone https://github.com/al165/musaic
+   $ git clone https://github.com/al165/musaic.git
    $ cd musaic
    ```
    
