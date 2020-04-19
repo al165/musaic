@@ -36,10 +36,77 @@ It is recomended to use Python version 3.6.x since I have encountered issues wit
 
 4. Launch `musAIc` with ```$ python src/main/python/main.py```
 
+## Detailed Instructions
+For complete beginners of Python and Terminal
+
+### Mac
+
+1. Open Terminal from the Finder.
+
+2. Install XCode, Homebrew and Python 3.X. A simple guide that covers these can be found
+   [here](https://installpython3.com/mac/). Follow the steps up untill the
+   Virtual Environments stuff (I recommend something easier in the next step)
+   
+3. Install [pyenv](https://github.com/pyenv/pyenv):
+
+   ```
+   $ brew install pyenv openssl readline sqlite3 xz zlib
+   $ echo -e 'if command -v pyenv 1>/dev/null 2>&1; then\n  eval "$(pyenv init -)"\nfi' >> ~/.bash_profile
+   ```
+
+   Restart the Terminal.
+
+3. Create a folder and navigate into where you would like to install musAIc
+   (this is done with the commands `$ mkdir DirectoryName/` to make directories and `$ cd
+   path/to/directory` to move into a directory). This could be in somewhere like
+   Projects/, Music/Tools/, or whatever you like to do to organise your projects.
+   
+4. Download (clone) this repository in this folder with the command, and move
+   into the folder:
+
+   ```
+   $ git clone https://github.com/al165/musaic
+   $ cd musaic
+   ```
+   
+5. Create virtual environment and install dependencies:
+
+   ```
+   $ pyenv install 3.6.8
+   $ pyenv local 3.6.8
+   ```
+
+   (Verify that the command `$ pyenv which python` returns some path with with
+   `3.6.8` somewhere in it)
+   
+6. Finally, launch musAIc with the command `$ python src/main/python/main.py`
+
+7. **Bonus**: to make it easier to start musAIc without using the terminal,
+   first copy the output of the command `$ pwd` in the directory you launched
+   musAIc from. Then, create a new file with your favourite text editor called
+   `musaic.sh` and put in the following with the path you just copied:
+
+   ```
+   #!/bin/bash
+   
+   cd PATH_YOU_JUST_COPIED
+   python src/main/python/main.py &
+   ```
+
+   Save this file to Desktop, then in Terminal run the command:
+
+   ```
+   $ sudo chmod +x ~/Desktop/musaic.py
+   ```
+
+   (If you are promted to enter your password, do so and press enter)
+
+   Now, to launch musAIc just double click `musaic.sh`!
+
 
 ## Usage
 
-**TODO** 
+**Work In Progress** 
 
 ### Using MIDI out
 

@@ -8,8 +8,9 @@ from collections import defaultdict
 
 try:
     import jack
+    HAS_JACK = True
 except ImportError:
-    jack = None
+    HAS_JACK = False
 
 from pythonosc import udp_client
 import mido
@@ -57,8 +58,6 @@ class MediaPlayer(threading.Thread):
         self.stopRequest = multiprocessing.Event()
         self.playing = multiprocessing.Event()
         self.stopping = False
-        self.started = False
-
         self.loop = {
             'loop': False,
             'start': 0,
@@ -69,7 +68,7 @@ class MediaPlayer(threading.Thread):
         self.midi = True
         self.port = None
 
-        self.jack = True
+        self.jack = HAS_JACK
         self.jackClient = None
 
         # {channel: {note}}
@@ -90,16 +89,6 @@ class MediaPlayer(threading.Thread):
 
             if self.playing.is_set():
                 # --- Starting playback
-                if not self.started:
-                    print('[MediaPlayer]', 'Starting playback')
-                    self.started = True
-                    print(self.midi, self.sendMidiClock, self.port)
-                    if self.midi and self.sendMidiClock and self.port:
-                        print('start message')
-                        self.port.send(mido.Message('start'))
-                    else:
-                        print('Port not found!!')
-
                 # --- Before measure starts
                 print('[MediaPlayer]', 'Bar', self.clockVar[0], self.port)
 
@@ -148,6 +137,8 @@ class MediaPlayer(threading.Thread):
 
                             if self.jack:
                                 self.setJackTransportPosition(next_bar)
+                            if self.midi:
+                                self.setMidiSongPosition(next_bar)
 
                     with self.clockVar:
                         self.clockVar[0] = next_bar
@@ -165,10 +156,10 @@ class MediaPlayer(threading.Thread):
                         self.client.send_message('/clockStop', 1)
                     self.allOff()
                     self.stopping = False
-                    self.started = False
 
             else:
                 time.sleep(0.1)
+
 
     def join(self, timeout=None):
         self.stopRequest.set()
@@ -256,6 +247,8 @@ class MediaPlayer(threading.Thread):
         if self.playing.is_set():
             return
 
+        print('[MediaPlayer]', 'Starting playback')
+
         self.checkMessages()
 
         start_bar = self.clockVar[0]
@@ -270,10 +263,15 @@ class MediaPlayer(threading.Thread):
             self.clockVar[0] = start_bar
             self.clockVar[2] = 1
 
+        if self.midi and self.sendMidiClock and self.port:
+            print('start message')
+            self.setMidiSongPosition(self.clockVar[0])
+            self.port.send(mido.Message('start'))
+
         if self.jack:
             self.setJackTransportPosition(self.clockVar[0])
 
-        if self.osc:
+        if self.osc and self.sendOscClock:
             self.client.send_message('/clockStart', 1)
 
         self.playing.set()
@@ -291,6 +289,12 @@ class MediaPlayer(threading.Thread):
         self.jackClient.transport_locate(location)
         self.jackClient.transport_start()
 
+    def setMidiSongPosition(self, n):
+        if not self.midi or not self.port or not self.sendMidiClock:
+            return
+
+        self.port.send(mido.Message('songpos', pos=int(16*n*4)))
+
 
     def setStop(self):
         self.playing.clear()
@@ -300,8 +304,8 @@ class MediaPlayer(threading.Thread):
     def allOff(self):
         if self.client and self.osc:
             self.client.send_message('/panic', 0)
-        if self.port:
-            self.port.panic() # doesn't work??
+        #if self.port:
+        #    self.port.panic() # doesn't work??
 
         for chan in self.noteOns.keys():
             notes = list(self.noteOns[chan])
