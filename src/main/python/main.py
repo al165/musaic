@@ -8,7 +8,7 @@ from gui.elements import InstrumentPanel, TrackPanel, TimeView, SectionView
 from app import Engine
 
 
-APP_NAME = "musAIc v1.0.1"
+APP_NAME = "musAIc v0.9.1"
 
 INS_PANEL_HEIGHT = 100
 TIMELINE_HEIGHT = 20
